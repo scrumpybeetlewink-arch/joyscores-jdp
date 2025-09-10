@@ -1,0 +1,8 @@
+15:33:03.288 [NamespaceSystem-akka.actor.default-dispatcher-4] INFO akka.event.slf4j.Slf4jLogger - Slf4jLogger started
+15:33:03.360 [main] INFO com.firebase.server.forge.App$ - Listening at 127.0.0.1:9000
+15:33:06.053 [NamespaceSystem-akka.actor.default-dispatcher-4] INFO com.firebase.core.namespace.NamespaceActor - joyscores-default-rtdb successfully activated FBKV (SurveyIdle(0)) wait: 57ms, init: 0ms
+15:33:06.084 [NamespaceSystem-blocking-namespace-operation-dispatcher-6] INFO com.firebase.core.namespace.StateManager - Namespace joyscores-default-rtdb status Active to Active
+15:34:30.037 [Thread-0] INFO com.firebase.server.forge.App$ - Attempting graceful shutdown.
+15:34:30.042 [NamespaceSystem-akka.actor.default-dispatcher-5] INFO com.firebase.core.namespace.Terminator$Terminator - 1 actors left to terminate: joyscores-default-rtdb
+15:34:30.046 [NamespaceSystem-akka.actor.default-dispatcher-5] INFO com.firebase.core.namespace.NamespaceActor - stopped namespace actor for joyscores-default-rtdb
+15:34:30.049 [Thread-0] INFO com.firebase.server.forge.App$ - Graceful shutdown complete.
