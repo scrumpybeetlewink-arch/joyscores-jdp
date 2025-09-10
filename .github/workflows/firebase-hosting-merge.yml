@@ -1,9 +1,7 @@
-# Deploy to Firebase Hosting on merge (pnpm + .env.local)
 name: Deploy to Firebase Hosting on merge
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   build_and_deploy:
@@ -12,16 +10,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
+      # Install pnpm first so later steps don't complain
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # ⛔ remove pnpm cache here to avoid calling pnpm too early
+          # cache: pnpm
+
+      - name: Verify pnpm
+        run: pnpm --version
 
       - name: Create .env.local from GitHub Variables
         run: |
