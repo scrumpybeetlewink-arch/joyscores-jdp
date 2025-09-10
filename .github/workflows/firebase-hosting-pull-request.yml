@@ -20,7 +20,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          # cache: pnpm  # ⛔ leave this out to avoid early pnpm usage
 
       - name: Verify pnpm
         run: pnpm --version
@@ -47,6 +46,6 @@ jobs:
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
-          projectId: joyscores-ef086
+          projectId: joyscores
           channelId: preview
           expires: 7d
