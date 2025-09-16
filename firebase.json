@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "joyscores-ef086",
     "public": "out",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
