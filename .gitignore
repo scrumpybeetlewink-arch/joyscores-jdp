@@ -6,3 +6,6 @@ out
 keys/*.json
 .env.local
 database-debug.log
+keys/*.json
+.env.local
+database-debug.log
