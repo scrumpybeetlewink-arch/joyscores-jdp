@@ -50,5 +50,4 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
           projectId: joyscores
           channelId: live
-          # This targets your Hosting site (not the project id).
-          target: joyscores-ef086
+    
