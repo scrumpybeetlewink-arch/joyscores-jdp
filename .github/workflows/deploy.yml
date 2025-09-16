@@ -34,10 +34,10 @@ jobs:
       - name: Build (Next.js static export to /out)
         run: pnpm build
 
-      - name: Deploy to Firebase Hosting (live)
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
-          channelId: live
-          projectId: joyscores-ef086
+- name: Deploy to Firebase Hosting (live)
+  uses: FirebaseExtended/action-hosting-deploy@v0
+  with:
+    repoToken: ${{ secrets.GITHUB_TOKEN }}
+    firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
+    channelId: live
+    projectId: joyscores
