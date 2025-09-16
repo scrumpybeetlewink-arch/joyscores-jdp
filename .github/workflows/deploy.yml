@@ -1,10 +1,4 @@
-name: Deploy to Firebase Hosting (live)
-  uses: FirebaseExtended/action-hosting-deploy@v0
-  with:
-    repoToken: ${{ secrets.GITHUB_TOKEN }}
-    firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
-    channelId: live
-    projectId: joyscores
+name: Deploy to Firebase Hosting on merge
 
 on:
   push:
@@ -13,6 +7,7 @@ on:
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +22,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'pnpm'
+
+      # OPTIONAL: only if your app reads NEXT_PUBLIC_* from .env.local
+      # (If config is hard-coded, you can delete this step.)
+      - name: Create .env.local from repo variables
+        run: |
+          cat > .env.local << 'EOF'
+          NEXT_PUBLIC_FB_API_KEY=${{ vars.NEXT_PUBLIC_FB_API_KEY }}
+          NEXT_PUBLIC_FB_AUTH_DOMAIN=${{ vars.NEXT_PUBLIC_FB_AUTH_DOMAIN }}
+          NEXT_PUBLIC_FB_DB_URL=${{ vars.NEXT_PUBLIC_FB_DB_URL }}
+          NEXT_PUBLIC_FB_PROJECT_ID=${{ vars.NEXT_PUBLIC_FB_PROJECT_ID }}
+          NEXT_PUBLIC_FB_STORAGE_BUCKET=${{ vars.NEXT_PUBLIC_FB_STORAGE_BUCKET }}
+          NEXT_PUBLIC_FB_APP_ID=${{ vars.NEXT_PUBLIC_FB_APP_ID }}
+          EOF
 
       - name: Install deps
         run: pnpm install --frozen-lockfile
@@ -34,10 +43,12 @@ jobs:
       - name: Build (Next.js static export to /out)
         run: pnpm build
 
-- name: Deploy to Firebase Hosting (live)
-  uses: FirebaseExtended/action-hosting-deploy@v0
-  with:
-    repoToken: ${{ secrets.GITHUB_TOKEN }}
-    firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
-    channelId: live
-    projectId: joyscores
+      - name: Deploy to Firebase Hosting (live)
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
+          projectId: joyscores
+          channelId: live
+          # This targets your Hosting site (not the project id).
+          target: joyscores-ef086
