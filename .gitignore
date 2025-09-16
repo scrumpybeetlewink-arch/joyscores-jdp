@@ -1,11 +1,19 @@
+# Dependencies
 node_modules
+
+# Next.js build
 .next
 out
+
+# macOS system file
 .DS_Store
+
+# Environment files
 .env*
-keys/*.json
 .env.local
-database-debug.log
+
+# Firebase / service account keys
 keys/*.json
-.env.local
+
+# Debug logs
 database-debug.log
