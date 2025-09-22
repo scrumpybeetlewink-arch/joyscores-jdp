@@ -40,13 +40,14 @@ jobs:
         run: pnpm build
 
       # === IMPORTANT: set channelId + project/site ===
-      - name: Firebase Hosting deploy (preview)
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          channelId: pr-${{ github.event.pull_request.number }}
-          projectId: joyscores                # your Firebase projectId
-          site: joyscores-ef086               # your Hosting "site" (from your log)
-          expires: 7d
-          # If you prefer a service account JSON secret, uncomment:
-          # firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
+   - name: Firebase Hosting deploy (preview)
+  uses: FirebaseExtended/action-hosting-deploy@v0
+  with:
+    repoToken: ${{ secrets.GITHUB_TOKEN }}
+    # Always-resolves channel id (works on re-runs too)
+    channelId: preview-${{ github.sha }}
+    projectId: joyscores            # from your log
+    site: joyscores-ef086           # from your log
+    expires: 7d
+    # If you prefer service account auth instead of OIDC, use the next line instead of projectId/site:
+    # firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
