@@ -1,0 +1,89 @@
+name: Preview (Firebase Hosting via CLI)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT_ID: joyscores
+  SITE_ID: joyscores-ef086
+  CHANNEL_ID: preview-${{ github.sha }}
+  EXPIRES: 7d
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧾 Show workflow identity
+        run: |
+          echo "WF file = .github/workflows/preview.yml"
+          echo "GITHUB_SHA=$GITHUB_SHA"
+          echo "CHANNEL_ID=$CHANNEL_ID"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # Auth with a Service Account (repo secret must contain full JSON)
+      - name: Write Firebase service account
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}' > $HOME/sa.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/sa.json" >> $GITHUB_ENV
+
+      - name: Install Firebase CLI
+        run: npm i -g firebase-tools@14
+
+      - name: 🚀 Deploy preview channel (explicit)
+        id: deploy
+        run: |
+          set -e
+          firebase --version
+          echo "Deploying CHANNEL_ID=$CHANNEL_ID PROJECT_ID=$PROJECT_ID SITE_ID=$SITE_ID"
+          OUT=$(firebase hosting:channel:deploy "$CHANNEL_ID" \
+                --project "$PROJECT_ID" --site "$SITE_ID" \
+                --expires "$EXPIRES" --json)
+          echo "$OUT"
+          URL=$(echo "$OUT" | jq -r '.result[]?.url // .result.channel.url // empty')
+          if [ -z "$URL" ]; then
+            echo "Preview URL not found in CLI output"; exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: 💬 Comment preview URL on PR
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const url = '${{ steps.deploy.outputs.url }}';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `✅ Firebase Preview: ${url}`
+            });
