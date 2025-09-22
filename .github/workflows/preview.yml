@@ -39,14 +39,14 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # Deploy to a PR-specific preview channel and publish a Check with the URL
+      # === IMPORTANT: set channelId + project/site ===
       - name: Firebase Hosting deploy (preview)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
-          # Either use OIDC (preferred) or your existing service account secret
-          # channelId will group by PR; change if you want:
           channelId: pr-${{ github.event.pull_request.number }}
-          projectId: joyscoressss # <-- set your real project id if needed
-          # If you use a service account JSON secret instead of OIDC, uncomment the next line:
+          projectId: joyscores                # your Firebase projectId
+          site: joyscores-ef086               # your Hosting "site" (from your log)
+          expires: 7d
+          # If you prefer a service account JSON secret, uncomment:
           # firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
