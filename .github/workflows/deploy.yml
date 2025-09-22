@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  PROJECT_ID: joyscores
+  SITE_ID: joyscores-ef086
+
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
@@ -28,7 +32,7 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      # OPTIONAL: only needed if your app reads NEXT_PUBLIC_* from env
+      # Optional: only if you actually read NEXT_PUBLIC_* at build time
       - name: Create .env.local from repo variables
         run: |
           cat > .env.local << 'EOF'
@@ -43,15 +47,19 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      - name: Build (Next.js)
-        run: pnpm build
+      - name: Build + Export (static)
+        run: pnpm build:static
 
-      # 🔵 LIVE deploy (not a preview channel)
-      - name: Deploy to Firebase Hosting (LIVE)
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
-          projectId: joyscores
-          site: joyscores-ef086
-          channelId: live
+      - name: Write Firebase service account
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}' > $HOME/sa.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/sa.json" >> $GITHUB_ENV
+
+      - name: Install Firebase CLI
+        run: npm i -g firebase-tools@14
+
+      - name: 🚀 Deploy to LIVE (uploads /out per firebase.json)
+        run: |
+          set -e
+          firebase --version
+          firebase deploy --only hosting:"$SITE_ID" --project "$PROJECT_ID" --non-interactive
