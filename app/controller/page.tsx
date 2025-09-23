@@ -1,4 +1,4 @@
-// app/controller/page.tsx
+// app/controller/ClientController.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -82,8 +82,8 @@ function nextPoint(cur: Point, opp: Point, golden: boolean) {
   return { self: ladder[Math.min(i + 1, 3)], opp, gameWon: false };
 }
 
-/** ---------- Page ---------- */
-export default function ControllerPage() {
+/** ---------- Component ---------- */
+export default function ClientController() {
   const [state, setState] = useState<ScoreState | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -135,12 +135,6 @@ export default function ControllerPage() {
     }
   }
 
-  async function decPoint(side: Side) {
-    if (!courtRef || !state) return;
-    // simple undo: reset both to 0 (so you can replay); customize as needed
-    await update(courtRef, { points: { p1: 0, p2: 0 } });
-  }
-
   async function resetGame() {
     if (!courtRef) return;
     await update(courtRef, { points: { p1: 0, p2: 0 } });
@@ -177,7 +171,6 @@ export default function ControllerPage() {
 
   return (
     <div className="mx-auto max-w-4xl p-6 text-white space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-semibold">{state.meta.name}</h1>
         <div className="flex items-center gap-6">
@@ -203,7 +196,6 @@ export default function ControllerPage() {
         </div>
       </div>
 
-      {/* Players editor */}
       <div className="grid grid-cols-2 gap-6">
         <TeamCard
           title="Team 1"
@@ -227,16 +219,12 @@ export default function ControllerPage() {
         />
       </div>
 
-      {/* Scoring controls */}
       <div className="flex flex-wrap gap-3">
         <button className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500" onClick={() => inc("p1")}>
           + Point P1
         </button>
         <button className="px-4 py-2 rounded bg-pink-600 hover:bg-pink-500" onClick={() => inc("p2")}>
           + Point P2
-        </button>
-        <button className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600" onClick={() => decPoint("p1")}>
-          Undo last (simple)
         </button>
       </div>
     </div>
