@@ -5,20 +5,12 @@ on:
     branches: [ main ]
   workflow_dispatch: {}
 
-concurrency:
-  group: deploy-live
-  cancel-in-progress: true
-
 permissions:
   contents: read
-  deployments: write
-  id-token: write
 
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
-    env:
-      NEXT_TELEMETRY_DISABLED: 1
 
     steps:
       - name: Checkout
@@ -36,6 +28,7 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      # OPTIONAL: only needed if your app reads NEXT_PUBLIC_* from env
       - name: Create .env.local from repo variables
         run: |
           cat > .env.local << 'EOF'
@@ -50,21 +43,10 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      - name: Build (Next.js static export)
+      - name: Build (Next.js)
         run: pnpm build
 
-      - name: Sanity – exported routes
-        run: |
-          echo "---- out/ ----"
-          if [ -d out ]; then
-            find out -maxdepth 2 -type f -name "index.html" | sed 's#^out##' | sort
-            test -f out/controller/index.html
-            test -f out/live/index.html
-          else
-            echo "::error ::No 'out/' directory produced by build."
-            exit 1
-          fi
-
+      # 🔵 LIVE deploy (not a preview channel)
       - name: Deploy to Firebase Hosting (LIVE)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
