@@ -1,5 +1,5 @@
 // @ts-nocheck
-// app/controller/page.tsx (Diagnostic)
+// app/controller/page.tsx (Diagnostic & robust)
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -60,8 +60,8 @@ function nextPoint(cur: Point, opp: Point) {
 }
 
 export default function ControllerPage() {
-  // pick path from query (?path=courts/court1 or ?path=court1). default to multi-court.
-  const [path, setPath] = useState<string>(() => {
+  // Choose path via query (?path=courts/court1 or ?path=court1), default to multi-court
+  const [path] = useState<string>(() => {
     if (typeof window === "undefined") return "courts/court1";
     return new URLSearchParams(window.location.search).get("path") || "courts/court1";
   });
@@ -123,6 +123,7 @@ export default function ControllerPage() {
   }
 
   async function resetCourt() { if (courtRef) await set(courtRef, DEFAULT); }
+
   async function inc(side: Side) {
     if (!courtRef || !state) return;
     const cur = state.points[side], opp = state.points[other[side]];
@@ -134,7 +135,6 @@ export default function ControllerPage() {
     }
   }
 
-  // ---- UI (always renders) ----
   return (
     <main style={{ padding: 16, fontFamily: "ui-sans-serif, system-ui" }}>
       <div style={{
@@ -161,7 +161,6 @@ export default function ControllerPage() {
         </div>
       )}
 
-      {/* Render a small scoreboard ONLY if state is known, else show instructions + raw json */}
       {state ? (
         <>
           <h2 style={{ fontSize: 20, marginBottom: 8 }}>{state.meta?.name ?? "Court"}</h2>
