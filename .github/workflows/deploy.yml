@@ -1,72 +1,9 @@
-name: Deploy to Firebase Hosting (LIVE)
-
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch: {}
-
-concurrency:
-  group: deploy-live
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-  deployments: write
-
-jobs:
-  build_and_deploy:
-    runs-on: ubuntu-latest
-    env:
-      NEXT_TELEMETRY_DISABLED: 1
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-          run_install: false
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
-      - name: Create .env.local from repo variables
-        run: |
-          cat > .env.local << 'EOF'
-          NEXT_PUBLIC_FB_API_KEY=${{ vars.NEXT_PUBLIC_FB_API_KEY }}
-          NEXT_PUBLIC_FB_AUTH_DOMAIN=${{ vars.NEXT_PUBLIC_FB_AUTH_DOMAIN }}
-          NEXT_PUBLIC_FB_DB_URL=${{ vars.NEXT_PUBLIC_FB_DB_URL }}
-          NEXT_PUBLIC_FB_PROJECT_ID=${{ vars.NEXT_PUBLIC_FB_PROJECT_ID }}
-          NEXT_PUBLIC_FB_STORAGE_BUCKET=${{ vars.NEXT_PUBLIC_FB_STORAGE_BUCKET }}
-          NEXT_PUBLIC_FB_APP_ID=${{ vars.NEXT_PUBLIC_FB_APP_ID }}
-          EOF
-
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
-
-      - name: Build (Next.js)
-        run: pnpm build
-
-      - name: Deploy to Firebase Hosting (LIVE)
-        id: fb
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
-          projectId: joyscores
-          site: joyscores-ef086
-          channelId: live
-
-      - name: Add LIVE link to summary
-        if: ${{ steps.fb.outputs.details_url }}
-        run: |
-          {
-            echo "### 🚀 LIVE deployed"
-            echo ""
-            echo "*URL:* ${{ steps.fb.outputs.details_url }}"
-          } >> $GITHUB_STEP_SUMMARY
+- name: List exported routes (sanity)
+  run: |
+    echo "---- out/ ----"
+    if [ -d out ]; then
+      find out -maxdepth 2 -type f -name "index.html" | sed 's#^out##' | sort
+    else
+      echo "::error ::No 'out/' directory was produced by the build."
+      exit 1
+    fi
