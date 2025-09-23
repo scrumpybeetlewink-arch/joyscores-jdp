@@ -1,12 +1,9 @@
-// next.config.mjs
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',                 // static 'out/' for Firebase Hosting
+  output: 'export',
   images: { unoptimized: true },
-
-  // TEMPORARY: keep deploys green while we stabilize types/ESLint.
+  // TEMP so deploys succeed while we stabilize:
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
 };
-
 export default nextConfig;
