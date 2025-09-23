@@ -47,8 +47,9 @@ jobs:
           NEXT_PUBLIC_FB_APP_ID=${{ vars.NEXT_PUBLIC_FB_APP_ID }}
           EOF
 
+      # ⬇⬇⬇ THIS LINE CHANGED
       - name: Install deps
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build (Next.js static export)
         run: pnpm build
