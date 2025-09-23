@@ -3,9 +3,6 @@
     "site": "joyscores-ef086",
     "public": "out",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-    "rewrites": [
-      { "source": "**", "destination": "/index.html" }
-    ],
     "headers": [
       {
         "source": "**/*.@(js|css)",
