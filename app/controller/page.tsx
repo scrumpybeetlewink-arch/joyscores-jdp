@@ -1,5 +1,5 @@
 // @ts-nocheck
-// app/controller/page.tsx
+// app/controller/page.tsx (Diagnostic)
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -17,8 +17,6 @@ type ScoreState = {
   games: Record<Side, number>;
   sets: Record<Side, number>;
 };
-
-const COURT_PATH = `courts/court1`;
 
 const DEFAULT: ScoreState = {
   meta: { name: "Court 1", bestOf: 3 },
@@ -50,9 +48,8 @@ function mergeDefaults(v: any): ScoreState {
   };
 }
 
-const ladder: Point[] = [0, 15, 30, 40];
 const other: Record<Side, Side> = { p1: "p2", p2: "p1" };
-
+const ladder: Point[] = [0, 15, 30, 40];
 function nextPoint(cur: Point, opp: Point) {
   if (cur === "Ad") return { self: 0 as Point, opp: 0 as Point, gameWon: true };
   if (cur === 40 && opp === "Ad") return { self: 40 as Point, opp: 40 as Point, gameWon: false };
@@ -63,124 +60,157 @@ function nextPoint(cur: Point, opp: Point) {
 }
 
 export default function ControllerPage() {
-  const [state, setState] = useState<ScoreState | null>(null);
-  const [phase, setPhase] = useState<"init"|"repairing"|"ready"|"error">("init");
+  // pick path from query (?path=courts/court1 or ?path=court1). default to multi-court.
+  const [path, setPath] = useState<string>(() => {
+    if (typeof window === "undefined") return "courts/court1";
+    return new URLSearchParams(window.location.search).get("path") || "courts/court1";
+  });
+
+  const [raw, setRaw] = useState<any>(null);
+  const [phase, setPhase] = useState<"idle"|"listening"|"ready"|"error">("idle");
   const [err, setErr] = useState<string | null>(null);
 
   const courtRef: DatabaseReference | null = useMemo(
-    () => (db ? ref(db, COURT_PATH) : null),
-    [db]
+    () => (db ? ref(db, path) : null),
+    [db, path]
   );
 
   useEffect(() => {
-    let first = true;
+    setErr(null);
+    setRaw(null);
+    setPhase("idle");
+
     if (!db || !courtRef) {
+      setErr("Firebase not initialized (check NEXT_PUBLIC_* repo variables).");
       setPhase("error");
-      setErr("Firebase not initialized. Check NEXT_PUBLIC_* env vars in repo variables.");
       return;
     }
-    ensureAnonLogin().catch(() => { /* ignore */ });
 
-    const forceRepair =
-      typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).get("repair") === "1";
+    ensureAnonLogin().catch(() => {});
+    setPhase("listening");
 
     const unsub = onValue(
       courtRef,
-      async (snap) => {
-        try {
-          if (first) setPhase("repairing");
-          first = false;
-
-          if (!snap.exists() || forceRepair) {
-            await set(courtRef, DEFAULT);
-            setState(DEFAULT);
-            setPhase("ready");
-            return;
-          }
-
-          const raw: any = snap.val();
-
-          // repair missing branches then wait for next tick
-          const patch: any = {};
-          if (!raw.points) patch.points = DEFAULT.points;
-          if (!raw.games)  patch.games  = DEFAULT.games;
-          if (!raw.sets)   patch.sets   = DEFAULT.sets;
-          if (!raw.players || !raw.players["1a"] || !raw.players["1b"] || !raw.players["2a"] || !raw.players["2b"]) {
-            patch.players = DEFAULT.players;
-          }
-          if (!raw.meta || typeof raw.meta.bestOf === "undefined" || typeof raw.meta.name !== "string") {
-            patch.meta = DEFAULT.meta;
-          }
-          if (Object.keys(patch).length) { await update(courtRef, patch); return; }
-
-          setState(mergeDefaults(raw));
-          setPhase("ready");
-        } catch (e: any) {
-          setErr(String(e?.message ?? e));
-          setPhase("error");
-        }
+      (snap) => {
+        setRaw(snap.exists() ? snap.val() : null);
+        setPhase("ready");
       },
       (e) => {
-        setErr(`Database error: ${String(e)}`);
+        setErr(`Database error at "${path}": ${String(e)}`);
         setPhase("error");
       }
     );
 
     return () => unsub();
-  }, [courtRef, db]);
+  }, [courtRef, path]);
 
+  const state: ScoreState | null = raw ? mergeDefaults(raw) : null;
+
+  async function repair() {
+    if (!courtRef) return;
+    const current = raw ?? {};
+    const patch: any = {};
+    if (!current.points) patch.points = DEFAULT.points;
+    if (!current.games)  patch.games  = DEFAULT.games;
+    if (!current.sets)   patch.sets   = DEFAULT.sets;
+    if (!current.players || !current.players["1a"] || !current.players["1b"] || !current.players["2a"] || !current.players["2b"]) {
+      patch.players = DEFAULT.players;
+    }
+    if (!current.meta || typeof current.meta.bestOf === "undefined" || typeof current.meta.name !== "string") {
+      patch.meta = DEFAULT.meta;
+    }
+    if (Object.keys(patch).length) await update(courtRef, patch);
+  }
+
+  async function resetCourt() { if (courtRef) await set(courtRef, DEFAULT); }
   async function inc(side: Side) {
     if (!courtRef || !state) return;
-    const cur = state.points[side];
-    const opp = state.points[other[side]];
+    const cur = state.points[side], opp = state.points[other[side]];
     const n = nextPoint(cur, opp);
     if (n.gameWon) {
-      await update(courtRef, {
-        points: { p1: 0, p2: 0 },
-        games: { ...state.games, [side]: state.games[side] + 1 },
-      });
+      await update(courtRef, { points: { p1: 0, p2: 0 }, games: { ...state.games, [side]: state.games[side] + 1 } });
     } else {
-      await update(courtRef, {
-        points: { ...state.points, [side]: n.self, [other[side]]: n.opp },
-      });
+      await update(courtRef, { points: { ...state.points, [side]: n.self, [other[side]]: n.opp } });
     }
   }
-  async function resetGame() { if (courtRef) await update(courtRef, { points: { p1: 0, p2: 0 } }); }
-  async function newMatch()  { if (courtRef) await set(courtRef, DEFAULT); }
 
-  if (phase === "init" || phase === "repairing") return <div style={{ padding: 24 }}>Preparing court…</div>;
-  if (phase === "error") {
-    return (
-      <div style={{ padding: 24, color: "#fecaca" }}>
-        <div style={{ marginBottom: 8 }}>Controller failed to load.</div>
-        <div style={{ whiteSpace: "pre-wrap" }}>{err}</div>
-        <div style={{ marginTop: 12 }}>
-          Try <a href="/controller?repair=1" style={{ color: "#93c5fd" }}>force-repair</a>.
-        </div>
-      </div>
-    );
-  }
-  if (!state) return <div style={{ padding: 24 }}>Loading…</div>;
-
+  // ---- UI (always renders) ----
   return (
-    <main style={{ padding: 24 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>{state.meta.name}</h1>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <Team title="Team 1" a={state.players["1a"]} b={state.players["1b"]} games={state.games.p1} sets={state.sets.p1} points={state.points.p1}/>
-        <Team title="Team 2" a={state.players["2a"]} b={state.players["2b"]} games={state.games.p2} sets={state.sets.p2} points={state.points.p2}/>
+    <main style={{ padding: 16, fontFamily: "ui-sans-serif, system-ui" }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8, padding: 12,
+        background: "rgba(147,197,253,.08)", border: "1px solid rgba(147,197,253,.3)", borderRadius: 10, marginBottom: 12
+      }}>
+        <strong>Controller (diagnostic)</strong>
+        <span style={{ opacity: .8 }}>• DB path:&nbsp;
+          <code style={{ background: "rgba(0,0,0,.25)", padding: "2px 6px", borderRadius: 6 }}>{path}</code>
+        </span>
+        <span style={{ marginLeft: "auto", opacity: .8 }}>phase: {phase}</span>
       </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <button onClick={() => inc("p1")} style={{ padding: "8px 12px" }}>+ Point P1</button>
-        <button onClick={() => inc("p2")} style={{ padding: "8px 12px" }}>+ Point P2</button>
-        <button onClick={resetGame} style={{ padding: "8px 12px", marginLeft: "auto" }}>Reset game</button>
-        <button onClick={newMatch} style={{ padding: "8px 12px" }}>New match</button>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <a href="/controller?path=courts/court1" style={linkStyle}>Use path=courts/court1</a>
+        <a href="/controller?path=court1" style={linkStyle}>Use path=court1</a>
+        <button onClick={repair} style={btnStyle}>Repair missing keys</button>
+        <button onClick={resetCourt} style={btnStyle}>Reset court to defaults</button>
       </div>
+
+      {err && (
+        <div style={{ color: "#fecaca", marginBottom: 12 }}>
+          <strong>Error:</strong> <span style={{ whiteSpace: "pre-wrap" }}>{err}</span>
+        </div>
+      )}
+
+      {/* Render a small scoreboard ONLY if state is known, else show instructions + raw json */}
+      {state ? (
+        <>
+          <h2 style={{ fontSize: 20, marginBottom: 8 }}>{state.meta?.name ?? "Court"}</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <Team title="Team 1" a={state.players?.["1a"]} b={state.players?.["1b"]}
+                  games={state.games?.p1 ?? 0} sets={state.sets?.p1 ?? 0} points={(state.points?.p1 ?? 0) as Point} />
+            <Team title="Team 2" a={state.players?.["2a"]} b={state.players?.["2b"]}
+                  games={state.games?.p2 ?? 0} sets={state.sets?.p2 ?? 0} points={(state.points?.p2 ?? 0) as Point} />
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <button onClick={() => inc("p1")} style={btnStyle}>+ Point P1</button>
+            <button onClick={() => inc("p2")} style={btnStyle}>+ Point P2</button>
+          </div>
+        </>
+      ) : (
+        <div style={{ marginBottom: 12, opacity: .85 }}>
+          No state yet. If the path is empty, click <em>Reset court to defaults</em> to seed it.
+        </div>
+      )}
+
+      <details>
+        <summary style={{ cursor: "pointer" }}>Raw snapshot (debug)</summary>
+        <pre style={{ whiteSpace: "pre-wrap", background: "rgba(255,255,255,.06)", padding: 12, borderRadius: 8, marginTop: 8 }}>
+{JSON.stringify(raw, null, 2)}
+        </pre>
+      </details>
     </main>
   );
 }
 
-function Team(props: { title: string; a: Player; b: Player; games: number; sets: number; points: Point }) {
+const linkStyle: React.CSSProperties = {
+  textDecoration: "underline",
+  color: "#93c5fd",
+  padding: "6px 8px",
+  borderRadius: 8,
+  background: "rgba(147,197,253,.08)",
+  border: "1px solid rgba(147,197,253,.3)"
+};
+
+const btnStyle: React.CSSProperties = {
+  padding: "6px 10px",
+  borderRadius: 8,
+  border: "1px solid rgba(255,255,255,.2)",
+  background: "rgba(255,255,255,.06)",
+  color: "inherit",
+  cursor: "pointer"
+};
+
+function Team(props: { title: string; a?: Player; b?: Player; games: number; sets: number; points: Point }) {
   const { title, a, b, games, sets, points } = props;
   return (
     <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 12, padding: 12 }}>
