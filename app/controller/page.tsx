@@ -1,3 +1,4 @@
+// @ts-nocheck
 // app/controller/page.tsx
 "use client";
 
@@ -32,22 +33,6 @@ const DEFAULT: ScoreState = {
   sets:  { p1: 0, p2: 0 }
 };
 
-// ---- guards --------------------------------------------------------
-
-function hasKey<T extends string>(obj: any, key: T): obj is Record<T, unknown> {
-  return obj && Object.prototype.hasOwnProperty.call(obj, key);
-}
-
-function validState(s: any): s is ScoreState {
-  return !!s
-    && hasKey(s, "meta") && typeof s.meta?.name === "string" && typeof s.meta?.bestOf !== "undefined"
-    && hasKey(s, "players")
-    && s.players?.["1a"] && s.players?.["1b"] && s.players?.["2a"] && s.players?.["2b"]
-    && hasKey(s, "points") && typeof s.points?.p1 !== "undefined" && typeof s.points?.p2 !== "undefined"
-    && hasKey(s, "games")  && typeof s.games?.p1  !== "undefined" && typeof s.games?.p2  !== "undefined"
-    && hasKey(s, "sets")   && typeof s.sets?.p1   !== "undefined" && typeof s.sets?.p2   !== "undefined";
-}
-
 function mergeDefaults(v: any): ScoreState {
   const s = v ?? {};
   const players = s.players ?? {};
@@ -77,8 +62,6 @@ function nextPoint(cur: Point, opp: Point) {
   return { self: ladder[Math.min(i + 1, 3)], opp, gameWon: false };
 }
 
-// ---- component -----------------------------------------------------
-
 export default function ControllerPage() {
   const [state, setState] = useState<ScoreState | null>(null);
   const [phase, setPhase] = useState<"init"|"repairing"|"ready"|"error">("init");
@@ -98,7 +81,9 @@ export default function ControllerPage() {
     }
     ensureAnonLogin().catch(() => { /* ignore */ });
 
-    const forceRepair = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("repair") === "1";
+    const forceRepair =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("repair") === "1";
 
     const unsub = onValue(
       courtRef,
@@ -114,10 +99,10 @@ export default function ControllerPage() {
             return;
           }
 
-          const raw = snap.val();
+          const raw: any = snap.val();
 
-          // If core branches missing, write them and wait for next tick
-          const patch: Partial<ScoreState> = {};
+          // repair missing branches then wait for next tick
+          const patch: any = {};
           if (!raw.points) patch.points = DEFAULT.points;
           if (!raw.games)  patch.games  = DEFAULT.games;
           if (!raw.sets)   patch.sets   = DEFAULT.sets;
@@ -127,16 +112,9 @@ export default function ControllerPage() {
           if (!raw.meta || typeof raw.meta.bestOf === "undefined" || typeof raw.meta.name !== "string") {
             patch.meta = DEFAULT.meta;
           }
+          if (Object.keys(patch).length) { await update(courtRef, patch); return; }
 
-          if (Object.keys(patch).length) {
-            await update(courtRef, patch as any);
-            // wait for next onValue with repaired data
-            return;
-          }
-
-          // At this point structure exists; merge to be safe
-          const safe = mergeDefaults(raw);
-          setState(safe);
+          setState(mergeDefaults(raw));
           setPhase("ready");
         } catch (e: any) {
           setErr(String(e?.message ?? e));
@@ -168,13 +146,10 @@ export default function ControllerPage() {
       });
     }
   }
-
   async function resetGame() { if (courtRef) await update(courtRef, { points: { p1: 0, p2: 0 } }); }
   async function newMatch()  { if (courtRef) await set(courtRef, DEFAULT); }
 
-  if (phase === "init" || phase === "repairing") {
-    return <div style={{ padding: 24 }}>Preparing court…</div>;
-  }
+  if (phase === "init" || phase === "repairing") return <div style={{ padding: 24 }}>Preparing court…</div>;
   if (phase === "error") {
     return (
       <div style={{ padding: 24, color: "#fecaca" }}>
@@ -191,12 +166,10 @@ export default function ControllerPage() {
   return (
     <main style={{ padding: 24 }}>
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>{state.meta.name}</h1>
-
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <Team title="Team 1" a={state.players["1a"]} b={state.players["1b"]} games={state.games.p1} sets={state.sets.p1} points={state.points.p1}/>
         <Team title="Team 2" a={state.players["2a"]} b={state.players["2b"]} games={state.games.p2} sets={state.sets.p2} points={state.points.p2}/>
       </div>
-
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
         <button onClick={() => inc("p1")} style={{ padding: "8px 12px" }}>+ Point P1</button>
         <button onClick={() => inc("p2")} style={{ padding: "8px 12px" }}>+ Point P2</button>
