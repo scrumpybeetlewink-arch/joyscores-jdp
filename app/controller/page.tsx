@@ -64,7 +64,6 @@ function withDefaults(v: any): ScoreState {
   };
 }
 
-/** ---------- Page ---------- */
 export default function ControllerPage() {
   const [state, setState] = useState<ScoreState | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -98,8 +97,8 @@ export default function ControllerPage() {
   }, [courtRef, db]);
 
   async function setGoldenPoint(on: boolean) {
-    if (!courtRef) return;
-    await update(ref(db!, `courts/${COURT_ID}/meta`), { goldenPoint: on });
+    if (!db) return;
+    await update(ref(db, `courts/${COURT_ID}/meta`), { goldenPoint: on });
   }
 
   async function incrementPoint(side: Side) {
