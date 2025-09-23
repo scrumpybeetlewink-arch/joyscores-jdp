@@ -4,7 +4,9 @@
     "public": "out",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
-      { "source": "/", "destination": "/controller/index.html" }
+      { "source": "/controller", "destination": "/controller/index.html" },
+      { "source": "/live",       "destination": "/live/index.html" },
+      { "source": "/",           "destination": "/controller/index.html" }
     ]
   }
 }
