@@ -1,164 +1,100 @@
+// app/live/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { db, ensureAnonLogin } from "@/lib/firebase.client";
-import { ref, onValue } from "firebase/database";
+import { db } from "@/lib/firebase.client";
+import { ref, onValue, type DatabaseReference } from "firebase/database";
 
-/** ---------- Types ---------- */
 type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
 type BestOf = 3 | 5;
-
 type Player = { name: string; cc: string };
 type ScoreState = {
-  meta: { name: string; bestOf: BestOf };
+  meta: { name: string; bestOf: BestOf; goldenPoint: boolean };
   players: { "1a": Player; "1b": Player; "2a": Player; "2b": Player };
   points: Record<Side, Point>;
   games: Record<Side, number>;
-  sets: { p1: number[]; p2: number[] };
-  tiebreak: boolean;
-  tb: Record<Side, number>;
-  server: Side | null;
-  ts?: number;
+  sets: Record<Side, number>;
 };
 
-/** ---------- Firebase paths ---------- */
-const COURT_PATH = "/joyscores/court1";
-const META_NAME_PATH = "/joyscores/court1/meta/name";
+const COURT_ID = "court1";
 
-/** ---------- Helpers ---------- */
-const flag = (cc: string) => cc || "🏳️";
-const nameOrLabel = (n: string, fallback: string) => (n?.trim() ? n : fallback);
-
-const defaultState: ScoreState = {
-  meta: { name: "", bestOf: 3 },
+const DEFAULT: ScoreState = {
+  meta: { name: "Court 1", bestOf: 3, goldenPoint: false },
   players: {
-    "1a": { name: "", cc: "🇲🇾" },
-    "1b": { name: "", cc: "🇲🇾" },
-    "2a": { name: "", cc: "🇲🇾" },
-    "2b": { name: "", cc: "🇲🇾" },
+    "1a": { name: "P1A", cc: "my" },
+    "1b": { name: "P1B", cc: "my" },
+    "2a": { name: "P2A", cc: "my" },
+    "2b": { name: "P2B", cc: "my" },
   },
   points: { p1: 0, p2: 0 },
   games: { p1: 0, p2: 0 },
-  sets: { p1: [], p2: [] },
-  tiebreak: false,
-  tb: { p1: 0, p2: 0 },
-  server: "p1",
-  ts: undefined,
+  sets: { p1: 0, p2: 0 },
 };
 
-function normalize(v: any): ScoreState {
-  if (!v) return defaultState;
+function withDefaults(v: any): ScoreState {
+  const s = v ?? {};
   return {
-    ...defaultState,
-    ...v,
     meta: {
-      name: v?.meta?.name ?? "",
-      bestOf: (v?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
+      name: s.meta?.name ?? DEFAULT.meta.name,
+      bestOf: (s.meta?.bestOf as BestOf) ?? DEFAULT.meta.bestOf,
+      goldenPoint: typeof s.meta?.goldenPoint === "boolean" ? s.meta.goldenPoint : false,
     },
+    players: {
+      "1a": { name: s.players?.["1a"]?.name ?? "P1A", cc: s.players?.["1a"]?.cc ?? "my" },
+      "1b": { name: s.players?.["1b"]?.name ?? "P1B", cc: s.players?.["1b"]?.cc ?? "my" },
+      "2a": { name: s.players?.["2a"]?.name ?? "P2A", cc: s.players?.["2a"]?.cc ?? "my" },
+      "2b": { name: s.players?.["2b"]?.name ?? "P2B", cc: s.players?.["2b"]?.cc ?? "my" },
+    },
+    points: { p1: s.points?.p1 ?? 0, p2: s.points?.p2 ?? 0 },
+    games: { p1: s.games?.p1 ?? 0, p2: s.games?.p2 ?? 0 },
+    sets: { p1: s.sets?.p1 ?? 0, p2: s.sets?.p2 ?? 0 },
   };
 }
 
-/** =========================================================
- *  Live Page (simplified, always shows readable scoreboard)
- *  =========================================================
- */
 export default function LivePage() {
-  const [s, setS] = useState<ScoreState>(defaultState);
-  const [courtName, setCourtName] = useState<string>("");
+  const [state, setState] = useState<ScoreState | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  // Subscribe to Firebase
+  const courtRef: DatabaseReference | null = useMemo(() => {
+    if (!db) return null;
+    return ref(db, `courts/${COURT_ID}`);
+  }, [db]);
+
   useEffect(() => {
-    let unsubScore = () => {};
-    let unsubName = () => {};
-    (async () => {
-      try { await ensureAnonLogin(); } catch {}
-      unsubScore = onValue(ref(db, COURT_PATH), (snap) => setS(normalize(snap.val())));
-      unsubName = onValue(ref(db, META_NAME_PATH), (snap) => {
-        const v = snap.val();
-        setCourtName(typeof v === "string" ? v : "");
-      });
-    })();
-    return () => { unsubScore?.(); unsubName?.(); };
-  }, []);
-
-  const maxSets = useMemo(
-    () => ((s?.meta?.bestOf ?? 3) === 5 ? 5 : 3),
-    [s?.meta?.bestOf]
-  );
-
-  const Row = ({ side }: { side: Side }) => {
-    const players = s.players;
-    const sets = s.sets;
-    const games = s.games;
-
-    const p1a = nameOrLabel(players["1a"].name, "Player 1");
-    const p1b = nameOrLabel(players["1b"].name, "Player 2");
-    const p2a = nameOrLabel(players["2a"].name, "Player 3");
-    const p2b = nameOrLabel(players["2b"].name, "Player 4");
-
-    const line =
-      side === "p1"
-        ? `${flag(players["1a"].cc)} ${p1a} / ${flag(players["1b"].cc)} ${p1b}`
-        : `${flag(players["2a"].cc)} ${p2a} / ${flag(players["2b"].cc)} ${p2b}`;
-
-    const finished = Math.max(sets.p1.length, sets.p2.length);
-    const setCells = Array.from({ length: maxSets }).map((_, i) => {
-      if (i < finished) return side === "p1" ? sets.p1[i] ?? "" : sets.p2[i] ?? "";
-      if (i === finished) return side === "p1" ? games.p1 ?? "" : games.p2 ?? "";
-      return "";
-    });
-
-    const points = s.tiebreak ? `TB ${s.tb[side]}` : s.points[side];
-
-    return (
-      <div className="row">
-        <div className="teamline">{line}</div>
-        <div className="serveCol">{s.server === side ? "🎾" : ""}</div>
-        <div className="scoreGrid" style={{ gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)` }}>
-          {setCells.map((v, i) => (
-            <div key={i} className="scoreBox">{v}</div>
-          ))}
-          <div className="scoreBox">{String(points)}</div>
-        </div>
-      </div>
+    if (!db || !courtRef) {
+      setErr("Firebase not initialized (check env vars and firebase.client.ts).");
+      return;
+    }
+    const off = onValue(
+      courtRef,
+      (snap) => setState(withDefaults(snap.val())),
+      (e) => setErr(`Database error: ${String(e)}`)
     );
-  };
+    return () => off();
+  }, [courtRef, db]);
+
+  if (err) return <div className="p-4 text-red-200 bg-red-900/40 rounded">{err}</div>;
+  if (!state) return <div className="p-6 text-white">Loading…</div>;
 
   return (
-    <main className="wrap">
-      <style>{`
-        :root{
-          --c-ink:#212A31;
-          --c-ink-2:#0B1B2B;
-          --c-muted:#748D92;
-          --c-cloud:#D3D9D4;
-        }
-        .wrap{ min-height:100vh; background:var(--c-ink);
-          display:flex; align-items:center; justify-content:center; padding:2vh 2vw;}
-        .card{ width:min(1100px, 95vw); background:var(--c-ink-2); color:#fff;
-          border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,.25); padding:1rem 1.2rem;}
-        .header{ text-align:center; padding-bottom:.8rem;
-          border-bottom:1px solid rgba(211,217,212,.16);}
-        .courtName{ font-size:1.5em; font-weight:800; color:var(--c-cloud);}
-        .rows{ display:grid; gap:.9rem; margin-top:.9rem;}
-        .row{ display:grid; grid-template-columns: 1fr 2.8em minmax(0,1fr);
-          gap:.7em; align-items:center; font-size:1.3em;}
-        .teamline{ color:var(--c-cloud); overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
-        .serveCol{ text-align:center;}
-        .scoreGrid{ display:grid; gap:.35em;}
-        .scoreBox{ background:var(--c-muted); color:#0b1419;
-          border-radius:10px; min-height:2em; display:flex;
-          align-items:center; justify-content:center; font-weight:800;}
-      `}</style>
-
-      <section className="card">
-        <div className="header"><div className="courtName">{courtName || "Court"}</div></div>
-        <div className="rows">
-          <Row side="p1" />
-          <Row side="p2" />
+    <div className="p-6 text-white space-y-6">
+      <h1 className="text-2xl font-bold">{state.meta.name}</h1>
+      <p>
+        Best of {state.meta.bestOf} {state.meta.goldenPoint && "• Golden Point"}
+      </p>
+      <div className="grid grid-cols-2 gap-6">
+        <div>
+          <h2 className="font-semibold">Team 1</h2>
+          <p>{state.players["1a"].name} / {state.players["1b"].name}</p>
+          <p>Sets: {state.sets.p1} | Games: {state.games.p1} | Points: {String(state.points.p1)}</p>
         </div>
-      </section>
-    </main>
+        <div>
+          <h2 className="font-semibold">Team 2</h2>
+          <p>{state.players["2a"].name} / {state.players["2b"].name}</p>
+          <p>Sets: {state.sets.p2} | Games: {state.games.p2} | Points: {String(state.points.p2)}</p>
+        </div>
+      </div>
+    </div>
   );
 }
