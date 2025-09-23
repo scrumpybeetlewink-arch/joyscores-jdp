@@ -1,13 +1,33 @@
-// app/controller/[courtId]/page.tsx
+// app/controller/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
-import { ref, onValue, set, update } from "firebase/database";
-import type { ScoreState, Side, Point, BestOf } from "@/lib/types";
+import {
+  ref,
+  onValue,
+  set,
+  update,
+  type DatabaseReference,
+} from "firebase/database";
 
-const DEFAULT_STATE: ScoreState = {
+/** ---------- Types ---------- */
+type Side = "p1" | "p2";
+type Point = 0 | 15 | 30 | 40 | "Ad";
+type BestOf = 3 | 5;
+type Player = { name: string; cc: string };
+type ScoreState = {
+  meta: { name: string; bestOf: BestOf; goldenPoint: boolean };
+  players: { "1a": Player; "1b": Player; "2a": Player; "2b": Player };
+  points: Record<Side, Point>;
+  games: Record<Side, number>;
+  sets: Record<Side, number>;
+};
+
+/** ---------- Config ---------- */
+const COURT_ID = "court1";
+
+const DEFAULT: ScoreState = {
   meta: { name: "Court 1", bestOf: 3, goldenPoint: false },
   players: {
     "1a": { name: "P1A", cc: "my" },
@@ -20,17 +40,17 @@ const DEFAULT_STATE: ScoreState = {
   sets: { p1: 0, p2: 0 },
 };
 
-/** Merge any partial/old snapshot into the latest schema. */
-function withDefaults(snap: any): ScoreState {
-  const s = snap ?? {};
+/** Merge any old snapshot into the latest schema */
+function withDefaults(v: any): ScoreState {
+  const s = v ?? {};
   return {
     meta: {
-      name: s.meta?.name ?? DEFAULT_STATE.meta.name,
-      bestOf: (s.meta?.bestOf as BestOf) ?? DEFAULT_STATE.meta.bestOf,
+      name: s.meta?.name ?? DEFAULT.meta.name,
+      bestOf: (s.meta?.bestOf as BestOf) ?? DEFAULT.meta.bestOf,
       goldenPoint:
         typeof s.meta?.goldenPoint === "boolean"
           ? s.meta.goldenPoint
-          : DEFAULT_STATE.meta.goldenPoint,
+          : DEFAULT.meta.goldenPoint,
     },
     players: {
       "1a": { name: s.players?.["1a"]?.name ?? "P1A", cc: s.players?.["1a"]?.cc ?? "my" },
@@ -44,86 +64,81 @@ function withDefaults(snap: any): ScoreState {
   };
 }
 
+/** ---------- Page ---------- */
 export default function ControllerPage() {
-  const { courtId } = useParams<{ courtId: string }>();
-  const courtRef = useMemo(() => ref(db, `courts/${courtId}`), [courtId]);
   const [state, setState] = useState<ScoreState | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  // Ensure auth + subscribe
+  const courtRef: DatabaseReference | null = useMemo(() => {
+    if (!db) return null;
+    return ref(db, `courts/${COURT_ID}`);
+  }, [db]);
+
   useEffect(() => {
-    ensureAnonLogin();
-    const off = onValue(courtRef, (snap) => {
-      const incoming = withDefaults(snap.val());
-      // If snapshot missing fields (e.g., new goldenPoint), persist the migration:
-      if (!snap.exists() || snap.val()?.meta?.goldenPoint === undefined) {
-        void set(courtRef, incoming);
-      }
-      setState(incoming);
-    });
+    if (!db || !courtRef) {
+      setErr("Firebase not initialized (check env vars and firebase.client.ts).");
+      return;
+    }
+
+    ensureAnonLogin().catch((e) => setErr(`Auth error: ${String(e)}`));
+
+    const off = onValue(
+      courtRef,
+      (snap) => {
+        const merged = withDefaults(snap.val());
+        // One-time migration to ensure goldenPoint exists
+        if (!snap.exists() || snap.val()?.meta?.goldenPoint === undefined) {
+          set(courtRef, merged).catch((e) => console.error("set error", e));
+        }
+        setState(merged);
+      },
+      (e) => setErr(`Database error: ${String(e)}`)
+    );
     return () => off();
-  }, [courtRef]);
+  }, [courtRef, db]);
 
-  if (!state) return <div className="p-6 text-white">Loading…</div>;
-
-  /** ---- Scoring helpers ---- */
-  const other: Record<Side, Side> = { p1: "p2", p2: "p1" };
-
-  function nextPoint(current: Point, opp: Point, goldenPoint: boolean): { self: Point; opp: Point; gameWon: boolean } {
-    // Golden point: at 40–40 next point wins (no 'Ad')
-    if (goldenPoint) {
-      if (current === 40 && opp === 40) {
-        return { self: 0, opp: 0, gameWon: true };
-      }
-      if (current === 40) {
-        // You already had 40 and opponent < 40 -> this point wins game
-        return { self: 0, opp: 0, gameWon: true };
-      }
-      // Regular progression up to 40
-      const ladder: Point[] = [0, 15, 30, 40];
-      const idx = ladder.indexOf(current);
-      return { self: ladder[Math.min(idx + 1, ladder.length - 1)], opp, gameWon: false };
-    }
-
-    // Regular (with Advantage)
-    if (current === "Ad") {
-      return { self: 0, opp: 0, gameWon: true };
-    }
-    if (current === 40 && opp === "Ad") {
-      // Remove opponent's advantage
-      return { self: 40, opp: 40, gameWon: false };
-    }
-    if (current === 40 && opp === 40) {
-      return { self: "Ad", opp: 40, gameWon: false };
-    }
-    if (current === 40) {
-      return { self: 0, opp: 0, gameWon: true };
-    }
-    const ladder: Point[] = [0, 15, 30, 40];
-    const idx = ladder.indexOf(current);
-    return { self: ladder[Math.min(idx + 1, ladder.length - 1)], opp, gameWon: false };
+  async function setGoldenPoint(on: boolean) {
+    if (!courtRef) return;
+    await update(ref(db!, `courts/${COURT_ID}/meta`), { goldenPoint: on });
   }
 
   async function incrementPoint(side: Side) {
-    const s = state!;
-    const { self, opp, gameWon } = nextPoint(s.points[side], s.points[other[side]], s.meta.goldenPoint);
+    if (!courtRef || !state) return;
+    const other: Record<Side, Side> = { p1: "p2", p2: "p1" };
+    const cur = state.points[side];
+    const opp = state.points[other[side]];
+    const ladder: Point[] = [0, 15, 30, 40];
 
-    if (gameWon) {
+    function next(cur: Point, opp: Point, golden: boolean) {
+      if (golden) {
+        if (cur === 40) return { self: 0, opp: 0, gameWon: true };
+        const i = ladder.indexOf(cur);
+        return { self: ladder[Math.min(i + 1, 3)], opp, gameWon: false };
+      }
+      if (cur === "Ad") return { self: 0, opp: 0, gameWon: true };
+      if (cur === 40 && opp === "Ad") return { self: 40, opp: 40, gameWon: false };
+      if (cur === 40 && opp === 40) return { self: "Ad" as Point, opp: 40, gameWon: false };
+      if (cur === 40) return { self: 0, opp: 0, gameWon: true };
+      const i = ladder.indexOf(cur);
+      return { self: ladder[Math.min(i + 1, 3)], opp, gameWon: false };
+    }
+
+    const n = next(cur, opp, state.meta.goldenPoint);
+    if (n.gameWon) {
       await update(courtRef, {
         points: { p1: 0, p2: 0 },
-        games: { ...s.games, [side]: s.games[side] + 1 },
+        games: { ...state.games, [side]: state.games[side] + 1 },
       });
     } else {
       await update(courtRef, {
-        points: { ...s.points, [side]: self, [other[side]]: opp },
+        points: { ...state.points, [side]: n.self, [other[side]]: n.opp },
       });
     }
   }
 
-  async function toggleGoldenPoint(on: boolean) {
-    await update(ref(db, `courts/${courtId}/meta`), { goldenPoint: on });
-  }
+  if (err) return <div className="p-4 text-red-200 bg-red-900/40 rounded">{err}</div>;
+  if (!state) return <div className="p-6 text-white">Loading…</div>;
 
-  // …Your existing UI, wired to incrementPoint/toggleGoldenPoint…
   return (
     <div className="p-6 text-white space-y-6">
       <div className="flex items-center justify-between">
@@ -132,21 +147,49 @@ export default function ControllerPage() {
           <input
             type="checkbox"
             checked={state.meta.goldenPoint}
-            onChange={(e) => toggleGoldenPoint(e.target.checked)}
+            onChange={(e) => setGoldenPoint(e.target.checked)}
           />
           <span>Golden point</span>
         </label>
       </div>
 
-      {/* Example controls – replace with your real UI */}
-      <div className="flex gap-4">
-        <button className="px-3 py-2 rounded bg-blue-600" onClick={() => incrementPoint("p1")}>+ Point P1</button>
-        <button className="px-3 py-2 rounded bg-pink-600" onClick={() => incrementPoint("p2")}>+ Point P2</button>
+      <div className="flex gap-3">
+        <button
+          className="px-3 py-2 rounded bg-blue-600"
+          onClick={() => incrementPoint("p1")}
+        >
+          + Point P1
+        </button>
+        <button
+          className="px-3 py-2 rounded bg-pink-600"
+          onClick={() => incrementPoint("p2")}
+        >
+          + Point P2
+        </button>
       </div>
 
-      <pre className="bg-black/40 p-4 rounded">
-        {JSON.stringify(state, null, 2)}
-      </pre>
+      <div className="grid grid-cols-2 gap-6">
+        <div>
+          <h2 className="font-semibold">Team 1</h2>
+          <p>
+            {state.players["1a"].name} / {state.players["1b"].name}
+          </p>
+          <p>
+            Sets: {state.sets.p1} | Games: {state.games.p1} | Points:{" "}
+            {String(state.points.p1)}
+          </p>
+        </div>
+        <div>
+          <h2 className="font-semibold">Team 2</h2>
+          <p>
+            {state.players["2a"].name} / {state.players["2b"].name}
+          </p>
+          <p>
+            Sets: {state.sets.p2} | Games: {state.games.p2} | Points:{" "}
+            {String(state.points.p2)}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
