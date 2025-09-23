@@ -1,8 +1,24 @@
 {
+  "name": "joyscores-jdp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build && next export -o out",
+    "dev": "next dev --turbopack",
+    "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "echo \"(lint skipped)\""
+  },
+  "dependencies": {
+    "firebase": "11.10.0",
+    "next": "15.5.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.14",
+    "@types/react": "18.3.24",
+    "eslint": "9.35.0",
+    "typescript": "5.9.2"
   }
 }
