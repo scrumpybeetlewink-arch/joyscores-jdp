@@ -1,133 +1,152 @@
+// app/controller/[courtId]/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
-import { ref, onValue, set } from "firebase/database";
+import { ref, onValue, set, update } from "firebase/database";
+import type { ScoreState, Side, Point, BestOf } from "@/lib/types";
 
-/** ---------- Types ---------- */
-type Side = "p1" | "p2";
-type Point = 0 | 15 | 30 | 40 | "Ad";
-type BestOf = 3 | 5;
-
-type Player = { name: string; cc: string };
-type ScoreState = {
-  meta: { name: string; bestOf: BestOf; goldenPoint: boolean };
-  players: { "1a": Player; "1b": Player; "2a": Player; "2b": Player };
-  points: Record<Side, Point>;
-  games: Record<Side, number>;
-  sets: { p1: number[]; p2: number[] };
+const DEFAULT_STATE: ScoreState = {
+  meta: { name: "Court 1", bestOf: 3, goldenPoint: false },
+  players: {
+    "1a": { name: "P1A", cc: "my" },
+    "1b": { name: "P1B", cc: "my" },
+    "2a": { name: "P2A", cc: "my" },
+    "2b": { name: "P2B", cc: "my" },
+  },
+  points: { p1: 0, p2: 0 },
+  games: { p1: 0, p2: 0 },
+  sets: { p1: 0, p2: 0 },
 };
 
+/** Merge any partial/old snapshot into the latest schema. */
+function withDefaults(snap: any): ScoreState {
+  const s = snap ?? {};
+  return {
+    meta: {
+      name: s.meta?.name ?? DEFAULT_STATE.meta.name,
+      bestOf: (s.meta?.bestOf as BestOf) ?? DEFAULT_STATE.meta.bestOf,
+      goldenPoint:
+        typeof s.meta?.goldenPoint === "boolean"
+          ? s.meta.goldenPoint
+          : DEFAULT_STATE.meta.goldenPoint,
+    },
+    players: {
+      "1a": { name: s.players?.["1a"]?.name ?? "P1A", cc: s.players?.["1a"]?.cc ?? "my" },
+      "1b": { name: s.players?.["1b"]?.name ?? "P1B", cc: s.players?.["1b"]?.cc ?? "my" },
+      "2a": { name: s.players?.["2a"]?.name ?? "P2A", cc: s.players?.["2a"]?.cc ?? "my" },
+      "2b": { name: s.players?.["2b"]?.name ?? "P2B", cc: s.players?.["2b"]?.cc ?? "my" },
+    },
+    points: { p1: s.points?.p1 ?? 0, p2: s.points?.p2 ?? 0 },
+    games: { p1: s.games?.p1 ?? 0, p2: s.games?.p2 ?? 0 },
+    sets: { p1: s.sets?.p1 ?? 0, p2: s.sets?.p2 ?? 0 },
+  };
+}
+
 export default function ControllerPage() {
+  const { courtId } = useParams<{ courtId: string }>();
+  const courtRef = useMemo(() => ref(db, `courts/${courtId}`), [courtId]);
   const [state, setState] = useState<ScoreState | null>(null);
 
-  // --- Sync with Firebase ---
+  // Ensure auth + subscribe
   useEffect(() => {
     ensureAnonLogin();
-    const scoreRef = ref(db, "court1");
-    return onValue(scoreRef, (snap) => {
-      if (snap.exists()) setState(snap.val());
+    const off = onValue(courtRef, (snap) => {
+      const incoming = withDefaults(snap.val());
+      // If snapshot missing fields (e.g., new goldenPoint), persist the migration:
+      if (!snap.exists() || snap.val()?.meta?.goldenPoint === undefined) {
+        void set(courtRef, incoming);
+      }
+      setState(incoming);
     });
-  }, []);
+    return () => off();
+  }, [courtRef]);
 
-  const update = (path: string, value: any) => {
-    set(ref(db, `court1/${path}`), value);
-  };
+  if (!state) return <div className="p-6 text-white">Loading…</div>;
 
-  if (!state) return <div className="p-6">Loading...</div>;
+  /** ---- Scoring helpers ---- */
+  const other: Record<Side, Side> = { p1: "p2", p2: "p1" };
 
+  function nextPoint(current: Point, opp: Point, goldenPoint: boolean): { self: Point; opp: Point; gameWon: boolean } {
+    // Golden point: at 40–40 next point wins (no 'Ad')
+    if (goldenPoint) {
+      if (current === 40 && opp === 40) {
+        return { self: 0, opp: 0, gameWon: true };
+      }
+      if (current === 40) {
+        // You already had 40 and opponent < 40 -> this point wins game
+        return { self: 0, opp: 0, gameWon: true };
+      }
+      // Regular progression up to 40
+      const ladder: Point[] = [0, 15, 30, 40];
+      const idx = ladder.indexOf(current);
+      return { self: ladder[Math.min(idx + 1, ladder.length - 1)], opp, gameWon: false };
+    }
+
+    // Regular (with Advantage)
+    if (current === "Ad") {
+      return { self: 0, opp: 0, gameWon: true };
+    }
+    if (current === 40 && opp === "Ad") {
+      // Remove opponent's advantage
+      return { self: 40, opp: 40, gameWon: false };
+    }
+    if (current === 40 && opp === 40) {
+      return { self: "Ad", opp: 40, gameWon: false };
+    }
+    if (current === 40) {
+      return { self: 0, opp: 0, gameWon: true };
+    }
+    const ladder: Point[] = [0, 15, 30, 40];
+    const idx = ladder.indexOf(current);
+    return { self: ladder[Math.min(idx + 1, ladder.length - 1)], opp, gameWon: false };
+  }
+
+  async function incrementPoint(side: Side) {
+    const s = state!;
+    const { self, opp, gameWon } = nextPoint(s.points[side], s.points[other[side]], s.meta.goldenPoint);
+
+    if (gameWon) {
+      await update(courtRef, {
+        points: { p1: 0, p2: 0 },
+        games: { ...s.games, [side]: s.games[side] + 1 },
+      });
+    } else {
+      await update(courtRef, {
+        points: { ...s.points, [side]: self, [other[side]]: opp },
+      });
+    }
+  }
+
+  async function toggleGoldenPoint(on: boolean) {
+    await update(ref(db, `courts/${courtId}/meta`), { goldenPoint: on });
+  }
+
+  // …Your existing UI, wired to incrementPoint/toggleGoldenPoint…
   return (
-    <div className="p-6 space-y-6 text-white bg-neutral-900 min-h-screen">
-      {/* --- Header Row: Match name, Golden Point toggle, Best Of dropdown --- */}
-      <div className="flex items-center gap-4">
-        <input
-          className="text-xl bg-transparent border-b border-neutral-600 focus:outline-none flex-1"
-          value={state.meta.name}
-          onChange={(e) => update("meta/name", e.target.value)}
-        />
-
-        {/* Golden Point Toggle */}
-        <button
-          onClick={() => update("meta/goldenPoint", !state.meta.goldenPoint)}
-          className={`px-3 py-1 rounded text-lg ${
-            state.meta.goldenPoint
-              ? "bg-yellow-500 text-black"
-              : "bg-neutral-700 text-yellow-400"
-          }`}
-          title="Toggle Golden Point"
-        >
-          {state.meta.goldenPoint ? "🟡" : "⚪"}
-        </button>
-
-        {/* Best Of Dropdown */}
-        <select
-          value={state.meta.bestOf}
-          onChange={(e) =>
-            update("meta/bestOf", Number(e.target.value) as BestOf)
-          }
-          className="bg-neutral-800 border border-neutral-600 rounded px-2 py-1"
-        >
-          <option value={3}>Best of 3</option>
-          <option value={5}>Best of 5</option>
-        </select>
+    <div className="p-6 text-white space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">{state.meta.name}</h1>
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={state.meta.goldenPoint}
+            onChange={(e) => toggleGoldenPoint(e.target.checked)}
+          />
+          <span>Golden point</span>
+        </label>
       </div>
 
-      {/* --- Players --- */}
-      <div className="grid grid-cols-2 gap-6">
-        {(["1a", "1b", "2a", "2b"] as const).map((key) => (
-          <div key={key} className="space-y-2">
-            <input
-              className="w-full text-lg bg-transparent border-b border-neutral-600 focus:outline-none"
-              value={state.players[key].name}
-              onChange={(e) =>
-                update(`players/${key}/name`, e.target.value)
-              }
-            />
-          </div>
-        ))}
+      {/* Example controls – replace with your real UI */}
+      <div className="flex gap-4">
+        <button className="px-3 py-2 rounded bg-blue-600" onClick={() => incrementPoint("p1")}>+ Point P1</button>
+        <button className="px-3 py-2 rounded bg-pink-600" onClick={() => incrementPoint("p2")}>+ Point P2</button>
       </div>
 
-      {/* --- Scores --- */}
-      <div className="grid grid-cols-2 gap-6 text-center">
-        {(["p1", "p2"] as const).map((side) => (
-          <div key={side} className="space-y-2">
-            <div className="text-4xl">{state.points[side]}</div>
-            <div className="text-lg">
-              Games: {state.games[side]} | Sets: {state.sets[side].join(", ")}
-            </div>
-            <div className="flex justify-center gap-2">
-              <button
-                className="px-4 py-2 bg-green-600 rounded"
-                onClick={() => update(`points/${side}`, nextPoint(state.points[side]))}
-              >
-                +
-              </button>
-              <button
-                className="px-4 py-2 bg-red-600 rounded"
-                onClick={() => update(`points/${side}`, prevPoint(state.points[side]))}
-              >
-                -
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      <pre className="bg-black/40 p-4 rounded">
+        {JSON.stringify(state, null, 2)}
+      </pre>
     </div>
   );
-}
-
-/** --- Helpers --- */
-function nextPoint(p: Point): Point {
-  if (p === 0) return 15;
-  if (p === 15) return 30;
-  if (p === 30) return 40;
-  if (p === 40) return "Ad";
-  return 0;
-}
-function prevPoint(p: Point): Point {
-  if (p === "Ad") return 40;
-  if (p === 40) return 30;
-  if (p === 30) return 15;
-  if (p === 15) return 0;
-  return 0;
 }
