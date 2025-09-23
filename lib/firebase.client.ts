@@ -13,6 +13,7 @@ import {
 type InitStatus = { ok: boolean; message?: string };
 export let firebaseInitStatus: InitStatus = { ok: true };
 
+// Read envs without throwing (safer for CI/Hosting)
 function read(name: string) {
   return process.env[name] ?? "";
 }
@@ -20,9 +21,9 @@ function read(name: string) {
 const firebaseConfig = {
   apiKey: read("NEXT_PUBLIC_FB_API_KEY"),
   authDomain: read("NEXT_PUBLIC_FB_AUTH_DOMAIN"),
-  databaseURL: read("NEXT_PUBLIC_FB_DB_URL"),
+  databaseURL: read("NEXT_PUBLIC_FB_DB_URL"),          // exact casing
   projectId: read("NEXT_PUBLIC_FB_PROJECT_ID"),
-  // Must be "<project-id>.appspot.com"
+  // IMPORTANT: this must be "<project-id>.appspot.com"
   storageBucket: read("NEXT_PUBLIC_FB_STORAGE_BUCKET"),
   appId: read("NEXT_PUBLIC_FB_APP_ID"),
 };
@@ -40,11 +41,11 @@ try {
       ok: false,
       message: `Missing Firebase env(s): ${missing.join(", ")}`,
     };
-    // continue with partial config; UI will render banner
   }
 
   app = getApps().length ? getApp() : initializeApp(firebaseConfig);
   db = getDatabase(app);
+
   if (typeof window !== "undefined") {
     try {
       auth = initializeAuth(app, { persistence: browserLocalPersistence });
@@ -59,7 +60,6 @@ try {
 
 export { app, db, auth };
 
-/** Optional helper: anonymous sign-in if available */
 export async function ensureAnonLogin() {
   if (!auth) return;
   if (!auth.currentUser) {
