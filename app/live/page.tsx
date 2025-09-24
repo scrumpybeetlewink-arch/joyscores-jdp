@@ -1,120 +1,170 @@
 // @ts-nocheck
 "use client";
 
-// Keep route exportable
 export const dynamic = "force-static";
 
 import { useEffect, useMemo, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
-import { ref, onValue, type DatabaseReference } from "firebase/database";
+import { ref, onValue } from "firebase/database";
 
-/** ---------- Types & defaults ---------- */
+/** ---------- Types ---------- */
+type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
 type BestOf = 3 | 5;
 
+type Player = { name: string; cc: string };
 type ScoreState = {
-  meta?: { name?: string; bestOf?: BestOf };
-  players?: {
-    "1a"?: { name?: string; cc?: string };
-    "1b"?: { name?: string; cc?: string };
-    "2a"?: { name?: string; cc?: string };
-    "2b"?: { name?: string; cc?: string };
-  };
-  points?: { p1?: Point; p2?: Point };
-  games?: { p1?: number; p2?: number };
-  sets?:  { p1?: number; p2?: number };
+  meta: { name: string; bestOf: BestOf };
+  players: { "1a": Player; "1b": Player; "2a": Player; "2b": Player };
+  points: Record<Side, Point>;
+  games: Record<Side, number>;
+  sets: { p1: number[]; p2: number[] };
+  tiebreak: boolean;
+  tb: Record<Side, number>;
+  server: Side | null;
+  ts?: number;
 };
 
-const DEFAULT: Required<ScoreState> = {
-  meta: { name: "Court 1", bestOf: 3 },
+/** ---------- Helpers ---------- */
+const flag = (cc: string) => cc || "🏳️";
+const nameOrLabel = (n: string, fallback: string) => (n?.trim() ? n : fallback);
+
+const defaultState: ScoreState = {
+  meta: { name: "", bestOf: 3 },
   players: {
-    "1a": { name: "", cc: "MY" },
-    "1b": { name: "", cc: "MY" },
-    "2a": { name: "", cc: "MY" },
-    "2b": { name: "", cc: "MY" }
+    "1a": { name: "", cc: "🇲🇾" },
+    "1b": { name: "", cc: "🇲🇾" },
+    "2a": { name: "", cc: "🇲🇾" },
+    "2b": { name: "", cc: "🇲🇾" },
   },
   points: { p1: 0, p2: 0 },
-  games:  { p1: 0, p2: 0 },
-  sets:   { p1: 0, p2: 0 }
+  games: { p1: 0, p2: 0 },
+  sets: { p1: [], p2: [] },
+  tiebreak: false,
+  tb: { p1: 0, p2: 0 },
+  server: "p1",
+  ts: undefined,
 };
 
-function mergeDefaults(v: any): Required<ScoreState> {
-  const s = v ?? {};
-  const p = s.players ?? {};
+function normalize(v: any): ScoreState {
+  if (!v) return defaultState;
   return {
-    meta:   { name: s.meta?.name ?? DEFAULT.meta.name, bestOf: (s.meta?.bestOf as BestOf) ?? DEFAULT.meta.bestOf },
-    players:{
-      "1a": { name: p["1a"]?.name ?? DEFAULT.players["1a"].name, cc: p["1a"]?.cc ?? DEFAULT.players["1a"].cc },
-      "1b": { name: p["1b"]?.name ?? DEFAULT.players["1b"].name, cc: p["1b"]?.cc ?? DEFAULT.players["1b"].cc },
-      "2a": { name: p["2a"]?.name ?? DEFAULT.players["2a"].name, cc: p["2a"]?.cc ?? DEFAULT.players["2a"].cc },
-      "2b": { name: p["2b"]?.name ?? DEFAULT.players["2b"].name, cc: p["2b"]?.cc ?? DEFAULT.players["2b"].cc },
+    ...defaultState,
+    ...v,
+    meta: {
+      name: v?.meta?.name ?? "",
+      bestOf: (v?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
     },
-    points: { p1: (s.points?.p1 ?? 0) as Point, p2: (s.points?.p2 ?? 0) as Point },
-    games:  { p1: s.games?.p1 ?? 0, p2: s.games?.p2 ?? 0 },
-    sets:   { p1: s.sets?.p1 ?? 0, p2: s.sets?.p2 ?? 0 },
   };
 }
 
-/** ---------- Page ---------- */
+/** =========================================================
+ *  Live Page (simplified, always shows readable scoreboard)
+ *  =========================================================
+ */
 export default function LivePage() {
-  const DEFAULT_PATH = "courts/court1";
+  // Allow override via ?path=... ; default to multi-court node
+  const defaultPath = "courts/court1";
   const [path] = useState<string>(() => {
-    if (typeof window === "undefined") return DEFAULT_PATH;
-    return new URLSearchParams(window.location.search).get("path") || DEFAULT_PATH;
+    if (typeof window === "undefined") return defaultPath;
+    return new URLSearchParams(window.location.search).get("path") || defaultPath;
   });
 
-  const courtRef: DatabaseReference | null = useMemo(() => (db ? ref(db, path) : null), [db, path]);
-  const [raw, setRaw] = useState<any>(null);
-  const [state, setState] = useState<Required<ScoreState>>(DEFAULT);
-  const [err, setErr] = useState<string | null>(null);
+  const [s, setS] = useState<ScoreState>(defaultState);
+  const [courtName, setCourtName] = useState<string>("");
 
+  // Subscribe to Firebase
   useEffect(() => {
-    setErr(null);
-    setRaw(null);
-    setState(DEFAULT);
+    let unsubScore = () => {};
+    let unsubName = () => {};
+    (async () => {
+      try { await ensureAnonLogin(); } catch {}
+      unsubScore = onValue(ref(db, path), (snap) => setS(normalize(snap.val())));              // ✅ fixed path
+      unsubName = onValue(ref(db, `${path}/meta/name`), (snap) => {                            // ✅ fixed path
+        const v = snap.val();
+        setCourtName(typeof v === "string" ? v : "");
+      });
+    })();
+    return () => { unsubScore?.(); unsubName?.(); };
+  }, [path]);
 
-    if (!db || !courtRef) {
-      setErr("Firebase not initialized – check NEXT_PUBLIC_* repo variables.");
-      return;
-    }
+  const maxSets = useMemo(
+    () => ((s?.meta?.bestOf ?? 3) === 5 ? 5 : 3),
+    [s?.meta?.bestOf]
+  );
 
-    ensureAnonLogin().catch(() => {});
-    const unsub = onValue(
-      courtRef,
-      (snap) => {
-        const val = snap.exists() ? snap.val() : null;
-        setRaw(val);
-        setState(val ? mergeDefaults(val) : DEFAULT);
-      },
-      (e) => setErr(String(e))
-    );
-    return () => unsub();
-  }, [courtRef]);
+  const Row = ({ side }: { side: Side }) => {
+    const players = s.players;
+    const sets = s.sets;
+    const games = s.games;
 
-  /** 
-   * ⬇︎ PASTE YOUR ORIGINAL UI HERE ⬇︎
-   * Replace everything inside the <OriginalUI … /> component with your old JSX/CSS.
-   * You can use: state (merged defaults), path, err for rendering.
-   */
-  return <OriginalUI state={state} path={path} err={err} />;
-}
+    const p1a = nameOrLabel(players["1a"].name, "Player 1");
+    const p1b = nameOrLabel(players["1b"].name, "Player 2");
+    const p2a = nameOrLabel(players["2a"].name, "Player 3");
+    const p2b = nameOrLabel(players["2b"].name, "Player 4");
 
-function OriginalUI({ state, path, err }: { state: Required<ScoreState>, path: string, err: string | null }) {
-  /* ⬇︎ PASTE YOUR ORIGINAL UI HERE ⬇︎
-     Use `state` (read-only), show `err` if present, and `path` if you display it.
-     Do not change the wrappers/imports above — just replace the return below with your exact UI. */
+    const line =
+      side === "p1"
+        ? `${flag(players["1a"].cc)} ${p1a} / ${flag(players["1b"].cc)} ${p1b}`
+        : `${flag(players["2a"].cc)} ${p2a} / ${flag(players["2b"].cc)} ${p2b}`;
 
-  // TEMP minimal shell so the page renders before you paste:
-  const P = state.points, G = state.games, S = state.sets;
-  return (
-    <main style={{ padding: 16 }}>
-      <h2>Paste your original Live UI here</h2>
-      <p style={{ opacity: .8 }}>path: <code>{path}</code></p>
-      {err && <p style={{ color: "#f88" }}>Error: {err}</p>}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div><strong>Team 1</strong> — Sets {S.p1} • Games {G.p1} • Points {String(P.p1)}</div>
-        <div><strong>Team 2</strong> — Sets {S.p2} • Games {G.p2} • Points {String(P.p2)}</div>
+    const finished = Math.max(sets.p1.length, sets.p2.length);
+    const setCells = Array.from({ length: maxSets }).map((_, i) => {
+      if (i < finished) return side === "p1" ? sets.p1[i] ?? "" : sets.p2[i] ?? "";
+      if (i === finished) return side === "p1" ? games.p1 ?? "" : games.p2 ?? "";
+      return "";
+    });
+
+    const points = s.tiebreak ? `TB ${s.tb[side]}` : s.points[side];
+
+    return (
+      <div className="row">
+        <div className="teamline">{line}</div>
+        <div className="serveCol">{s.server === side ? "🎾" : ""}</div>
+        <div className="scoreGrid" style={{ gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)` }}>
+          {setCells.map((v, i) => (
+            <div key={i} className="scoreBox">{v}</div>
+          ))}
+          <div className="scoreBox">{String(points)}</div>
+        </div>
       </div>
+    );
+  };
+
+  return (
+    <main className="wrap">
+      <style>{`
+        :root{
+          --c-ink:#212A31;
+          --c-ink-2:#0B1B2B;
+          --c-muted:#748D92;
+          --c-cloud:#D3D9D4;
+        }
+        .wrap{ min-height:100vh; background:var(--c-ink);
+          display:flex; align-items:center; justify-content:center; padding:2vh 2vw;}
+        .card{ width:min(1100px, 95vw); background:var(--c-ink-2); color:#fff;
+          border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,.25); padding:1rem 1.2rem;}
+        .header{ text-align:center; padding-bottom:.8rem;
+          border-bottom:1px solid rgba(211,217,212,.16);}
+        .courtName{ font-size:1.5em; font-weight:800; color:var(--c-cloud);}
+        .rows{ display:grid; gap:.9rem; margin-top:.9rem;}
+        .row{ display:grid; grid-template-columns: 1fr 2.8em minmax(0,1fr);
+          gap:.7em; align-items:center; font-size:1.3em;}
+        .teamline{ color:var(--c-cloud); overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
+        .serveCol{ text-align:center;}
+        .scoreGrid{ display:grid; gap:.35em;}
+        .scoreBox{ background:var(--c-muted); color:#0b1419;
+          border-radius:10px; min-height:2em; display:flex;
+          align-items:center; justify-content:center; font-weight:800;}
+      `}</style>
+
+      <section className="card">
+        <div className="header"><div className="courtName">{courtName || "Court"}</div></div>
+        <div className="rows">
+          <Row side="p1" />
+          <Row side="p2" />
+        </div>
+      </section>
     </main>
   );
 }
