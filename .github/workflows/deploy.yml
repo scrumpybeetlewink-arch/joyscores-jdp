@@ -28,7 +28,6 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      # Only needed if your client reads NEXT_PUBLIC_* (your repo does)
       - name: Create .env.local from repo variables
         run: |
           cat > .env.local << 'EOF'
@@ -46,16 +45,23 @@ jobs:
       - name: Build (Next.js)
         run: pnpm build
 
-      # Fail fast if /controller or /live were not exported → prevents Hosting 404s
+      # Accept either foldered index.html or flat .html files, then enforce presence
       - name: Sanity – exported routes
         run: |
-          echo "---- out/ ----"
-          if [ -d out ]; then
-            find out -maxdepth 2 -type f -name "index.html" | sed 's#^out##' | sort
-            test -f out/controller/index.html
-            test -f out/live/index.html
+          echo "---- out/ listing ----"
+          find out -maxdepth 2 -type f \( -name "index.html" -o -name "*.html" \) | sed 's#^out##' | sort || true
+          # controller
+          if [ -f out/controller/index.html ] || [ -f out/controller.html ]; then
+            echo "OK: controller exported"
           else
-            echo "::error ::No 'out/' directory produced by build."
+            echo "::error ::controller route not exported"
+            exit 1
+          fi
+          # live
+          if [ -f out/live/index.html ] || [ -f out/live.html ]; then
+            echo "OK: live exported"
+          else
+            echo "::error ::live route not exported"
             exit 1
           fi
 
