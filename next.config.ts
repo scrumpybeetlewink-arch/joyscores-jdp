@@ -2,9 +2,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // We’ll export static pages to /out for Firebase Hosting
   output: "export",
-  reactStrictMode: true
+  reactStrictMode: true,
+  trailingSlash: true,          // ⬅️ ensures out/controller/index.html, out/live/index.html
 };
 
 export default nextConfig;
