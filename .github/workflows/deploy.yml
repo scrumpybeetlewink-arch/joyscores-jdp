@@ -28,7 +28,7 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      # OPTIONAL: only needed if your app reads NEXT_PUBLIC_* from env
+      # Only needed if your client reads NEXT_PUBLIC_* (your repo does)
       - name: Create .env.local from repo variables
         run: |
           cat > .env.local << 'EOF'
@@ -46,7 +46,19 @@ jobs:
       - name: Build (Next.js)
         run: pnpm build
 
-      # 🔵 LIVE deploy (not a preview channel)
+      # Fail fast if /controller or /live were not exported → prevents Hosting 404s
+      - name: Sanity – exported routes
+        run: |
+          echo "---- out/ ----"
+          if [ -d out ]; then
+            find out -maxdepth 2 -type f -name "index.html" | sed 's#^out##' | sort
+            test -f out/controller/index.html
+            test -f out/live/index.html
+          else
+            echo "::error ::No 'out/' directory produced by build."
+            exit 1
+          fi
+
       - name: Deploy to Firebase Hosting (LIVE)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
