@@ -64,7 +64,7 @@ function normalize(v: any): ScoreState {
  */
 export default function LivePage() {
   // Allow override via ?path=... ; default to multi-court node
-  const defaultPath = "courts/court1";
+  const defaultPath = "/joyscores/court1";
   const [path] = useState<string>(() => {
     if (typeof window === "undefined") return defaultPath;
     return new URLSearchParams(window.location.search).get("path") || defaultPath;
