@@ -119,13 +119,18 @@ export default function ControllerPage() {
     const cells = Array.from({length:maxSets}).map((_,i)=> i<finished ? (side==="p1"?sets.p1[i]??"":sets.p2[i]??"") : i===finished ? (side==="p1"?games.p1:games.p2) : "");
     const pts = s.tiebreak ? `TB ${s.tb[side]}` : s.points[side];
     return (
-      <div className="row">
-        <div className="teamline">{team}</div>
-        <div className="serve">{s.server===side?"🎾":""}</div>
-        <div className="grid">{cells.map((v,i)=><div key={i} className="box">{v}</div>)}<div className="box">{String(pts)}</div></div>
+      <div className="row" style={{display:"grid",gridTemplateColumns:"1fr 3rem minmax(0,1fr)",gap:"1rem",alignItems:"center",fontSize:"1.35em",margin:"10px 0"}}>
+        <div className="teamline" style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{team}</div>
+        <div className="serve" style={{textAlign:"center"}}>{s.server===side?"🎾":""}</div>
+        <div className="grid" style={{display:"grid",gridTemplateColumns:`repeat(${maxSets+1}, 1fr)`,gap:".6rem"}}>
+          {cells.map((v,i)=><div key={i} className="box" style={boxStyle}>{v}</div>)}
+          <div className="box" style={boxStyle}>{String(pts)}</div>
+        </div>
       </div>
     );
   }
+
+  const boxStyle: React.CSSProperties = { background:"#748D92", color:"#0b1419", borderRadius:12, minHeight:"2.6em", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800 };
 
   return (
     <div className="wrap">
@@ -137,13 +142,6 @@ export default function ControllerPage() {
         .head{ display:flex; justify-content:space-between; align-items:flex-end; gap:1rem; margin-bottom:10px; }
         .title{ color:var(--cloud); font-size:1.4em; font-weight:800; }
         .select{ width:12em; border-radius:9999px; height:2.6em; background:var(--cloud); color:#0b1419; border:1px solid var(--muted); padding:0 .9em; }
-
-        .row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.35em; margin:10px 0; }
-        .teamline{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .serve{ text-align:center; }
-        /* ✅ FIX: compute columns in JS, not 3+1 literal */
-        .grid{ display:grid; grid-template-columns: repeat(${(/* TS hint */ 0 as any) || ''}${maxSets + 1}, 1fr); gap:.6rem; }
-        .box{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.6em; display:flex; align-items:center; justify-content:center; font-weight:800; }
 
         .panelGrid{ display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap:1rem; }
         .panel{ background:rgba(33,42,49,.45); border:1px solid rgba(211,217,212,.12); border-radius:12px; padding:1rem; }
