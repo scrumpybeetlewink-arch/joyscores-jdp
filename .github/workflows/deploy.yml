@@ -46,19 +46,21 @@ jobs:
         run: pnpm build
 
       # Accept either foldered index.html or flat .html files, then enforce presence
-      - name: Sanity – exported routes
+            - name: Sanity — exported routes
         run: |
           echo "---- out/ listing ----"
-          find out -maxdepth 2 -type f \( -name "index.html" -o -name "*.html" \) | sed 's#^out##' | sort || true
-          # controller
-          if [ -f out/controller/index.html ] || [ -f out/controller.html ]; then
+          find out -maxdepth 2 -type f \( -name 'index.html' -o -name '*.html' \) | sed 's#^#out/#' | sort || true
+
+          # controller: allow /controller/index.html OR /controller.html
+          if [[ -f out/controller/index.html ]] || [[ -f out/controller.html ]]; then
             echo "OK: controller exported"
           else
             echo "::error ::controller route not exported"
             exit 1
           fi
-          # live
-          if [ -f out/live/index.html ] || [ -f out/live.html ]; then
+
+          # live: allow /live/index.html OR /live.html
+          if [[ -f out/live/index.html ]] || [[ -f out/live.html ]]; then
             echo "OK: live exported"
           else
             echo "::error ::live route not exported"
