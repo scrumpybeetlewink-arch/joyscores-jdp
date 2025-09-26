@@ -8,13 +8,12 @@
       { "source": "/controller/", "destination": "/controller/index.html" },
       { "source": "/live",        "destination": "/live/index.html" },
       { "source": "/live/",       "destination": "/live/index.html" },
-      { "source": "/",            "destination": "/index.html" },
-      { "source": "**",           "destination": "/index.html" }
+      { "source": "/",            "destination": "/index.html" }
     ],
     "headers": [
-      { "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
-      { "source": "/controller/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
-      { "source": "/live/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] }
+      { "source": "/index.html",              "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
+      { "source": "/controller/index.html",   "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
+      { "source": "/live/index.html",         "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] }
     ]
   }
 }
