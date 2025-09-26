@@ -42,6 +42,7 @@ const defaultState: ScoreState = {
 /** ---------- Helpers ---------- */
 const flag = (cc: string) => cc || "🏳️";
 const nameOr = (n: string, fb: string) => (n?.trim() ? n : fb);
+const nz = (n: any, d: any) => (n === undefined || n === null ? d : n);
 
 /** ---------- Normalize RTDB ---------- */
 function normalize(v: any): ScoreState {
@@ -58,8 +59,12 @@ function normalize(v: any): ScoreState {
 
 export default function OverlayPage() {
   const params = useSearchParams();
-  const courtKey = (params.get("c") || "court1").trim();     // ?c=court2
-  const scale = Math.max(0.25, Number(params.get("s") || "1")); // ?s=0.9 to shrink
+  const courtKey = (params.get("c") || params.get("court") || "court1").trim();
+  const scale = Math.max(0.25, Number(params.get("s") || "1"));
+  const boxOnly = params.get("box") === "1";          // <-- key switch
+  const showTitle = params.get("title") !== "0";
+  const withShadow = params.get("shadow") !== "0";
+  const radius = Number(params.get("radius") ?? 16);  // px
 
   const [s, setS] = useState<ScoreState>(defaultState);
   const maxSets = useMemo(
@@ -96,8 +101,8 @@ export default function OverlayPage() {
 
     const finished = Math.max(sets.p1.length, sets.p2.length);
     const setCells = Array.from({ length: maxSets }).map((_, i) => {
-      if (i < finished) return side === "p1" ? sets.p1[i] ?? "" : sets.p2[i] ?? "";
-      if (i === finished) return side === "p1" ? games.p1 ?? "" : games.p2 ?? "";
+      if (i < finished) return side === "p1" ? nz(sets.p1[i], "") : nz(sets.p2[i], "");
+      if (i === finished) return side === "p1" ? nz(games.p1, "") : nz(games.p2, "");
       return "";
     });
 
@@ -118,30 +123,47 @@ export default function OverlayPage() {
   };
 
   return (
-    <main className="wrap" style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
+    <main
+      className={boxOnly ? "wrap box" : "wrap page"}
+      style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}
+    >
       <style>{`
-        /* Transparent for OBS */
-        html, body { background: transparent !important; }
-        :root{ --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; }
+        /* Transparent canvas for OBS */
+        html, body { background: transparent !important; margin: 0; }
+
+        :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; }
         .wrap{
           font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial;
           color: #fff;
-          padding: 8px 12px;
         }
+        /* Default page mode centers the card */
+        .wrap.page{
+          min-height: 100vh;
+          display: flex; align-items: center; justify-content: center;
+          padding: 2vh 2vw;
+        }
+        /* Box mode renders ONLY the card-sized box (no extra padding) */
+        .wrap.box{ display: inline-block; padding: 0; }
+
         .card{
-          background: rgba(11,27,43,.85);
-          border-radius: 16px;
-          padding: 10px 12px;
-          box-shadow: 0 10px 30px rgba(0,0,0,.35);
+          background: rgba(11,27,43,.92);
+          border-radius: ${radius}px;
+          padding: 12px 14px;
+          ${withShadow ? "box-shadow: 0 10px 30px rgba(0,0,0,.35);" : ""}
           border: 1px solid rgba(255,255,255,.08);
           width: min(1100px, 95vw);
         }
         .title{
-          text-align:center; font-weight:900; letter-spacing:.5px; margin-bottom:8px;
-          color: var(--cloud); font-size: 28px;
+          text-align:center; font-weight:900; letter-spacing:.5px; margin-bottom:10px;
+          color: var(--cloud); font-size: 26px;
         }
+        .hr{ height:1px; background:rgba(211,217,212,.16); margin: 6px 0 12px; }
+
         .rows{ display:grid; gap:10px; }
-        .r{ display:grid; grid-template-columns: 1fr 2.8rem minmax(0,1fr); gap:10px; align-items:center; font-size:22px; }
+        .r{
+          display:grid; grid-template-columns: 1fr 2.8rem minmax(0,1fr);
+          gap:10px; align-items:center; font-size:22px;
+        }
         .team{ color: var(--cloud); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .serve{ text-align:center; }
         .grid{ display:grid; gap:8px; }
@@ -152,7 +174,8 @@ export default function OverlayPage() {
       `}</style>
 
       <section className="card">
-        <div className="title">{s.meta.name || "Court"}</div>
+        {showTitle && <div className="title">{s.meta.name || "Court"}</div>}
+        {showTitle && <div className="hr" />}
         <div className="rows">
           <Row side="p1" />
           <Row side="p2" />
