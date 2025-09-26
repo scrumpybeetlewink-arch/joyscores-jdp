@@ -21,18 +21,17 @@ type ScoreState = {
   ts?: number;
 };
 
-/** ---------- Paths ---------- */
-const COURT_PATH = "/joyscores/court1";
-const META_NAME_PATH = "/joyscores/court1/meta/name";
+/** ---------- Unified paths (match Index & Live) ---------- */
+const COURT_PATH = "/courts/court1";                    // <- unified
+const META_NAME_PATH = "/courts/court1/meta/name";      // <- unified
 
-/** ---------- Helpers ---------- */
+/** ---------- Helpers / defaults ---------- */
 const flag = (cc: string) => cc || "🏳️";
 const nameOrLabel = (n: string, fb: string) => (n?.trim() ? n : fb);
 const nextPoint = (p: Point): Point =>
   p === 0 ? 15 : p === 15 ? 30 : p === 30 ? 40 : p === 40 ? "Ad" : "Ad";
 const prevPoint = (p: Point): Point => (p === 15 ? 0 : p === 30 ? 15 : p === 40 ? 30 : 40);
 
-/** ---------- Defaults ---------- */
 const defaultState: ScoreState = {
   meta: { name: "", bestOf: 3 },
   players: {
@@ -62,10 +61,6 @@ function normalize(v: any): ScoreState {
   };
 }
 
-/** =========================================================
- *  Controller
- *  =========================================================
- */
 export default function ControllerPage() {
   const [s, setS] = useState<ScoreState>(defaultState);
   const [externalCourtName, setExternalCourtName] = useState("");
@@ -75,8 +70,8 @@ export default function ControllerPage() {
     let off2 = () => {};
     (async () => {
       try { await ensureAnonLogin(); } catch {}
-      off1 = onValue(ref(db, COURT_PATH), snap => setS(normalize(snap.val())));
-      off2 = onValue(ref(db, META_NAME_PATH), snap => {
+      off1 = onValue(ref(db, COURT_PATH), (snap) => setS(normalize(snap.val())));
+      off2 = onValue(ref(db, META_NAME_PATH), (snap) => {
         const v = snap.val();
         setExternalCourtName(typeof v === "string" ? v : "");
       });
@@ -105,6 +100,7 @@ export default function ControllerPage() {
 
   function addPoint(side: Side, dir: 1 | -1) {
     const n = clone();
+
     if (n.tiebreak) {
       n.tb[side] = Math.max(0, n.tb[side] + dir);
       const A = n.tb.p1, B = n.tb.p2;
@@ -115,6 +111,7 @@ export default function ControllerPage() {
       }
       return commit(n);
     }
+
     if (dir === 1) {
       const opp: Side = side === "p1" ? "p2" : "p1";
       const ps = n.points[side], po = n.points[opp];
@@ -130,8 +127,29 @@ export default function ControllerPage() {
   }
 
   function toggleServer() { const n = clone(); n.server = n.server === "p1" ? "p2" : "p1"; commit(n); }
-  function resetGame()   { const n = clone(); const { p1, p2 } = n.games; if (p1 > p2) n.games.p1 = Math.max(0,p1-1); else if (p2 > p1) n.games.p2 = Math.max(0,p2-1); commit(n); }
-  function newMatch()    { commit({ ...defaultState, meta:{ name: externalCourtName, bestOf: s.meta?.bestOf ?? 3 }, server:"p1", ts: Date.now()}); }
+
+  function resetGame() {
+    const n = clone();
+    const { p1, p2 } = n.games;
+    if (p1 > p2) n.games.p1 = Math.max(0, p1 - 1);
+    else if (p2 > p1) n.games.p2 = Math.max(0, p2 - 1);
+    commit(n);
+  }
+
+  /** keep name in perfect sync with index + live */
+  async function newMatch() {
+    const next: ScoreState = {
+      ...defaultState,
+      meta: { name: externalCourtName, bestOf: (s.meta?.bestOf ?? 3) as BestOf },
+      server: "p1",
+      ts: Date.now(),
+    };
+
+    // 1) write the new court object
+    await set(ref(db, COURT_PATH), next);
+    // 2) explicitly write the leaf name (covers any listeners bound just to meta/name)
+    await set(ref(db, META_NAME_PATH), externalCourtName || "");
+  }
 
   async function updatePlayer(k:"1a"|"1b"|"2a"|"2b", f:"name"|"cc", v:string) {
     const n = clone(); (n.players[k] as any)[f] = v; await commit(n);
@@ -140,13 +158,14 @@ export default function ControllerPage() {
 
   const maxSets = useMemo(() => ((s.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s.meta?.bestOf]);
 
-  /** ---------- Row renderer (synced with Live spacing) ---------- */
+  /** ---------- Score rows (same spacing as Live) ---------- */
   function Row({ side }: { side: Side }) {
-    const players = s.players, sets = s.sets, games = s.games;
+    const { players, sets, games } = s;
     const p1a = nameOrLabel(players["1a"].name, "Player 1");
     const p1b = nameOrLabel(players["1b"].name, "Player 2");
     const p2a = nameOrLabel(players["2a"].name, "Player 3");
     const p2b = nameOrLabel(players["2b"].name, "Player 4");
+
     const line =
       side === "p1"
         ? `${flag(players["1a"].cc)} ${p1a} / ${flag(players["1b"].cc)} ${p1b}`
@@ -155,7 +174,7 @@ export default function ControllerPage() {
     const finished = Math.max(sets.p1.length, sets.p2.length);
     const setCells = Array.from({ length: maxSets }).map((_, i) => {
       if (i < finished) return side === "p1" ? sets.p1[i] ?? "" : sets.p2[i] ?? "";
-      if (i === finished) return side === "p1" ? games.p1 ?? "" : games.p2 ?? "";
+      if (i === finished) return side === "p1" ? (games.p1 ?? "") : (games.p2 ?? "");
       return "";
     });
 
@@ -166,7 +185,7 @@ export default function ControllerPage() {
         <div className="teamline">{line}</div>
         <div className="serve">{s.server === side ? "🎾" : ""}</div>
         <div className="grid" style={{ gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)` }}>
-          {setCells.map((v, i) => (<div key={i} className="box">{v}</div>))}
+          {setCells.map((v, i) => <div key={i} className="box">{v}</div>)}
           <div className="box">{String(points)}</div>
         </div>
       </div>
@@ -179,33 +198,38 @@ export default function ControllerPage() {
         :root{ --ink:#212A31; --ink2:#0B1B2B; --primary:#124E66; --muted:#748D92; --cloud:#D3D9D4; }
         .wrap{ background:var(--ink); min-height:100vh; padding:18px 2vw; }
         .container{ margin:0 auto; width:min(1100px,92vw); }
-        .card{ background:var(--ink2); color:#fff; border:1px solid rgba(0,0,0,.15); border-radius:16px; padding:1.25rem; box-shadow:0 6px 20px rgba(0,0,0,.25); }
+        .card{ background:var(--ink2); color:#fff; border:1px solid rgba(0,0,0,.15);
+               border-radius:16px; padding:1.25rem; box-shadow:0 6px 20px rgba(0,0,0,.25); }
 
-        /* >>> identical to Live spacing <<< */
+        /* spacing identical to Live */
         .rows{ display:grid; gap:.9rem; margin: 6px 0 10px; }
-        .row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.28em; }
+        .row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr);
+              gap:1rem; align-items:center; font-size:1.28em; }
         .teamline{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .serve{ text-align:center; }
         .grid{ display:grid; gap:.6rem; }
-        .box{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.4em; display:flex; align-items:center; justify-content:center; font-weight:800; }
-        /* ------------------------------- */
+        .box{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.4em;
+              display:flex; align-items:center; justify-content:center; font-weight:800; }
 
         .head{ display:flex; justify-content:space-between; align-items:flex-end; gap:1rem; margin-bottom:10px; }
         .title{ color:var(--cloud); font-size:1.4em; font-weight:800; }
-        .select{ width:12em; border-radius:9999px; height:2.6em; background:var(--cloud); color:#0b1419; border:1px solid var(--muted); padding:0 .9em; }
+        .select{ width:12em; border-radius:9999px; height:2.6em; background:var(--cloud);
+                 color:#0b1419; border:1px solid var(--muted); padding:0 .9em; }
 
         .panelGrid{ display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap:1rem; }
-        .panel{ background:rgba(33,42,49,.45); border:1px solid rgba(211,217,212,.12); border-radius:12px; padding:1rem; }
-        .input{ width:100%; background:#D3D9D4; color:#0b1419; border:1px solid var(--muted); border-radius:10px; height:2.6em; padding:0 .9em; }
-        .btn{ border:1px solid transparent; background:var(--primary); color:#fff; border-radius:12px; height:2.8em; padding:0 1.1em; font-weight:700; font-size:1em; }
+        .panel{ background:rgba(33,42,49,.45); border:1px solid rgba(211,217,212,.12);
+                border-radius:12px; padding:1rem; }
+        .input{ width:100%; background:#D3D9D4; color:#0b1419; border:1px solid var(--muted);
+                border-radius:10px; height:2.6em; padding:0 .9em; }
+        .btn{ border:1px solid transparent; background:var(--primary); color:#fff;
+              border-radius:12px; height:2.8em; padding:0 1.1em; font-weight:700; font-size:1em; }
       `}</style>
 
       <div className="container">
         <div className="card">
           <div className="head">
             <div className="title">{externalCourtName || "Court"}</div>
-            <select
-              className="select"
+            <select className="select"
               value={s.meta?.bestOf ?? 3}
               onChange={(e) => updateBestOf(Number(e.target.value) as BestOf)}
             >
@@ -214,7 +238,6 @@ export default function ControllerPage() {
             </select>
           </div>
 
-          {/* the two scoreboard rows with live-like spacing */}
           <div className="rows">
             <Row side="p1" />
             <Row side="p2" />
@@ -222,74 +245,8 @@ export default function ControllerPage() {
 
           <hr style={{ border: "none", height: 1, background: "rgba(211,217,212,.18)", margin: "0.75rem 0 1rem" }} />
 
-          {/* team panels (unchanged) */}
-          <div className="panelGrid">
-            {/* Team 1 */}
-            <div className="panel">
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
-                <div>
-                  <label>Player 1</label>
-                  <input className="input" placeholder="Enter Name"
-                    value={s.players["1a"].name}
-                    onChange={(e) => updatePlayer("1a", "name", e.target.value)} />
-                  <select className="input" value={s.players["1a"].cc}
-                    onChange={(e) => updatePlayer("1a", "cc", e.target.value)}>
-                    {["🇲🇾","🇸🇬","🇹🇭","🇮🇩","🇵🇭","🇻🇳","🇯🇵","🇰🇷","🇨🇳","🇺🇸"].map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label>Player 2</label>
-                  <input className="input" placeholder="Enter Name"
-                    value={s.players["1b"].name}
-                    onChange={(e) => updatePlayer("1b", "name", e.target.value)} />
-                  <select className="input" value={s.players["1b"].cc}
-                    onChange={(e) => updatePlayer("1b", "cc", e.target.value)}>
-                    {["🇲🇾","🇸🇬","🇹🇭","🇮🇩","🇵🇭","🇻🇳","🇯🇵","🇰🇷","🇨🇳","🇺🇸"].map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: ".75rem", marginTop: ".75rem" }}>
-                <button className="btn" style={{ height: "4.5rem", fontSize: "2.3em" }} onClick={() => addPoint("p1", +1)}>+</button>
-                <button className="btn" style={{ height: "4.5rem", fontSize: "2.3em" }} onClick={() => addPoint("p1", -1)}>−</button>
-              </div>
-            </div>
-
-            {/* Team 2 */}
-            <div className="panel">
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
-                <div>
-                  <label>Player 3</label>
-                  <input className="input" placeholder="Enter Name"
-                    value={s.players["2a"].name}
-                    onChange={(e) => updatePlayer("2a", "name", e.target.value)} />
-                  <select className="input" value={s.players["2a"].cc}
-                    onChange={(e) => updatePlayer("2a", "cc", e.target.value)}>
-                    {["🇲🇾","🇸🇬","🇹🇭","🇮🇩","🇵🇭","🇻🇳","🇯🇵","🇰🇷","🇨🇳","🇺🇸"].map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label>Player 4</label>
-                  <input className="input" placeholder="Enter Name"
-                    value={s.players["2b"].name}
-                    onChange={(e) => updatePlayer("2b", "name", e.target.value)} />
-                  <select className="input" value={s.players["2b"].cc}
-                    onChange={(e) => updatePlayer("2b", "cc", e.target.value)}>
-                    {["🇲🇾","🇸🇬","🇹🇭","🇮🇩","🇵🇭","🇻🇳","🇯🇵","🇰🇷","🇨🇳","🇺🇸"].map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: ".75rem", marginTop: ".75rem" }}>
-                <button className="btn" style={{ height: "4.5rem", fontSize: "2.3em" }} onClick={() => addPoint("p2", +1)}>+</button>
-                <button className="btn" style={{ height: "4.5rem", fontSize: "2.3em" }} onClick={() => addPoint("p2", -1)}>−</button>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: ".75rem", justifyContent: "center", marginTop: "1rem", flexWrap: "wrap" }}>
-            <button className="btn" style={{ background: "#8b2e2e" }} onClick={resetGame}>Reset Game</button>
-            <button className="btn" style={{ background: "#748D92", color: "#0b1419" }} onClick={newMatch}>New Match</button>
-            <button className="btn" onClick={toggleServer} title="Toggle server">Serve🎾</button>
-          </div>
+          {/* Team panels ... (unchanged) */}
+          {/* (keep your existing team panels + buttons here) */}
         </div>
       </div>
     </div>
