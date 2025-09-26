@@ -46,8 +46,10 @@ jobs:
         run: pnpm build
 
       # Accept either foldered index.html or flat .html files, then enforce presence
-            - name: Sanity — exported routes
+      - name: Sanity — exported routes
+        shell: bash
         run: |
+          set -e
           echo "---- out/ listing ----"
           find out -maxdepth 2 -type f \( -name 'index.html' -o -name '*.html' \) | sed 's#^#out/#' | sort || true
 
