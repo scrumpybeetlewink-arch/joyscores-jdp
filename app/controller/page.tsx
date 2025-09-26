@@ -141,7 +141,8 @@ export default function ControllerPage() {
         .row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.35em; margin:10px 0; }
         .teamline{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .serve{ text-align:center; }
-        .grid{ display:grid; grid-template-columns:repeat(${maxSets}+1,1fr); gap:.6rem; }
+        /* ✅ FIX: compute columns in JS, not 3+1 literal */
+        .grid{ display:grid; grid-template-columns: repeat(${(/* TS hint */ 0 as any) || ''}${maxSets + 1}, 1fr); gap:.6rem; }
         .box{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.6em; display:flex; align-items:center; justify-content:center; font-weight:800; }
 
         .panelGrid{ display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap:1rem; }
