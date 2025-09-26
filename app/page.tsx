@@ -2,6 +2,7 @@
 "use client";
 export const dynamic = "force-static";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue, set } from "firebase/database";
@@ -11,7 +12,6 @@ const PATH = "/courts/court1";
 export default function IndexPage() {
   const [courtName, setCourtName] = useState("Centre Court");
 
-  // Subscribe to court name
   useEffect(() => {
     let unsub = () => {};
     (async () => {
@@ -129,6 +129,8 @@ export default function IndexPage() {
             Reset
           </button>
         </div>
+
+        {/* ✅ Client-side navigation: no full page reload → no flash */}
         <div
           style={{
             display: "grid",
@@ -136,7 +138,7 @@ export default function IndexPage() {
             gap: 16,
           }}
         >
-          <a
+          <Link
             href="/controller"
             style={{
               display: "inline-flex",
@@ -154,8 +156,8 @@ export default function IndexPage() {
             }}
           >
             Controller
-          </a>
-          <a
+          </Link>
+          <Link
             href="/live"
             style={{
               display: "inline-flex",
@@ -173,8 +175,9 @@ export default function IndexPage() {
             }}
           >
             Live
-          </a>
+          </Link>
         </div>
+
         <div style={{ opacity: 0.6, fontSize: 12, marginTop: 16 }}>
           RTDB path: <code>{PATH}</code>
         </div>
