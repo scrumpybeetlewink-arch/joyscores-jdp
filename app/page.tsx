@@ -2,7 +2,6 @@
 "use client";
 export const dynamic = "force-static";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue, set } from "firebase/database";
@@ -64,6 +63,7 @@ export default function IndexPage() {
         >
           {courtName.toUpperCase()}
         </div>
+
         <hr
           style={{
             border: "none",
@@ -72,6 +72,7 @@ export default function IndexPage() {
             margin: "0 0 18px",
           }}
         />
+
         <label style={{ display: "block", opacity: 0.8, marginBottom: 8 }}>
           Court name
         </label>
@@ -90,6 +91,7 @@ export default function IndexPage() {
           value={courtName}
           onChange={(e) => setCourtName(e.target.value)}
         />
+
         <div
           style={{
             display: "grid",
@@ -130,7 +132,7 @@ export default function IndexPage() {
           </button>
         </div>
 
-        {/* ✅ Client-side navigation: no full page reload → no flash */}
+        {/* Plain anchors with trailing slashes = zero failure paths */}
         <div
           style={{
             display: "grid",
@@ -138,8 +140,8 @@ export default function IndexPage() {
             gap: 16,
           }}
         >
-          <Link
-            href="/controller"
+          <a
+            href="/controller/"
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -156,9 +158,9 @@ export default function IndexPage() {
             }}
           >
             Controller
-          </Link>
-          <Link
-            href="/live"
+          </a>
+          <a
+            href="/live/"
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -175,7 +177,7 @@ export default function IndexPage() {
             }}
           >
             Live
-          </Link>
+          </a>
         </div>
 
         <div style={{ opacity: 0.6, fontSize: 12, marginTop: 16 }}>
