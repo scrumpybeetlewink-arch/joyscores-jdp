@@ -1,7 +1,8 @@
 "use client";
 
+export const dynamic = "force-static";
+
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue } from "firebase/database";
 
@@ -39,12 +40,10 @@ const defaultState: ScoreState = {
   server: "p1",
 };
 
-/** ---------- Helpers ---------- */
 const flag = (cc: string) => cc || "🏳️";
 const nameOr = (n: string, fb: string) => (n?.trim() ? n : fb);
 const nz = (n: any, d: any) => (n === undefined || n === null ? d : n);
 
-/** ---------- Normalize RTDB ---------- */
 function normalize(v: any): ScoreState {
   if (!v) return defaultState;
   return {
@@ -57,37 +56,51 @@ function normalize(v: any): ScoreState {
   };
 }
 
+/** Read querystring on the client (no useSearchParams => no CSR bailout) */
+function readOptsFromLocation() {
+  if (typeof window === "undefined") {
+    return { courtKey: "court1", scale: 1, boxOnly: false, showTitle: true, withShadow: true, radius: 16 };
+  }
+  const q = new URLSearchParams(window.location.search);
+  const courtKey = (q.get("c") || q.get("court") || "court1").trim();
+  const scale = Math.max(0.25, Number(q.get("s") || "1"));
+  const boxOnly = q.get("box") === "1";
+  const showTitle = q.get("title") !== "0";
+  const withShadow = q.get("shadow") !== "0";
+  const radius = Number(q.get("radius") ?? 16);
+  return { courtKey, scale, boxOnly, showTitle, withShadow, radius };
+}
+
 export default function OverlayPage() {
-  const params = useSearchParams();
-  const courtKey = (params.get("c") || params.get("court") || "court1").trim();
-  const scale = Math.max(0.25, Number(params.get("s") || "1"));
-  const boxOnly = params.get("box") === "1";          // <-- key switch
-  const showTitle = params.get("title") !== "0";
-  const withShadow = params.get("shadow") !== "0";
-  const radius = Number(params.get("radius") ?? 16);  // px
-
+  const [{ courtKey, scale, boxOnly, showTitle, withShadow, radius }, setOpts] = useState(readOptsFromLocation);
   const [s, setS] = useState<ScoreState>(defaultState);
-  const maxSets = useMemo(
-    () => ((s.meta.bestOf ?? 3) === 5 ? 5 : 3),
-    [s.meta.bestOf]
-  );
 
-  // subscribe
+  // keep options in sync with URL changes (e.g., when OBS cache-busts)
+  useEffect(() => {
+    const update = () => setOpts(readOptsFromLocation());
+    update();
+    window.addEventListener("popstate", update);
+    window.addEventListener("hashchange", update);
+    return () => {
+      window.removeEventListener("popstate", update);
+      window.removeEventListener("hashchange", update);
+    };
+  }, []);
+
+  // subscribe to the selected court
   useEffect(() => {
     let off = () => {};
     (async () => {
       try { await ensureAnonLogin(); } catch {}
-      off = onValue(ref(db, `/courts/${courtKey}`), (snap) => {
-        setS(normalize(snap.val()));
-      });
+      off = onValue(ref(db, `/courts/${courtKey}`), (snap) => setS(normalize(snap.val())));
     })();
     return () => off?.();
   }, [courtKey]);
 
+  const maxSets = useMemo(() => ((s.meta.bestOf ?? 3) === 5 ? 5 : 3), [s.meta.bestOf]);
+
   const Row = ({ side }: { side: Side }) => {
-    const P = s.players;
-    const sets = s.sets;
-    const games = s.games;
+    const P = s.players, sets = s.sets, games = s.games;
 
     const p1a = nameOr(P["1a"].name, "Player 1");
     const p1b = nameOr(P["1b"].name, "Player 2");
@@ -128,23 +141,14 @@ export default function OverlayPage() {
       style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}
     >
       <style>{`
-        /* Transparent canvas for OBS */
         html, body { background: transparent !important; margin: 0; }
-
         :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; }
         .wrap{
           font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial;
           color: #fff;
         }
-        /* Default page mode centers the card */
-        .wrap.page{
-          min-height: 100vh;
-          display: flex; align-items: center; justify-content: center;
-          padding: 2vh 2vw;
-        }
-        /* Box mode renders ONLY the card-sized box (no extra padding) */
-        .wrap.box{ display: inline-block; padding: 0; }
-
+        .wrap.page{ min-height:100vh; display:flex; align-items:center; justify-content:center; padding:2vh 2vw; }
+        .wrap.box{ display:inline-block; padding:0; }
         .card{
           background: rgba(11,27,43,.92);
           border-radius: ${radius}px;
@@ -153,24 +157,14 @@ export default function OverlayPage() {
           border: 1px solid rgba(255,255,255,.08);
           width: min(1100px, 95vw);
         }
-        .title{
-          text-align:center; font-weight:900; letter-spacing:.5px; margin-bottom:10px;
-          color: var(--cloud); font-size: 26px;
-        }
-        .hr{ height:1px; background:rgba(211,217,212,.16); margin: 6px 0 12px; }
-
+        .title{ text-align:center; font-weight:900; letter-spacing:.5px; margin-bottom:10px; color:var(--cloud); font-size:26px; }
+        .hr{ height:1px; background:rgba(211,217,212,.16); margin:6px 0 12px; }
         .rows{ display:grid; gap:10px; }
-        .r{
-          display:grid; grid-template-columns: 1fr 2.8rem minmax(0,1fr);
-          gap:10px; align-items:center; font-size:22px;
-        }
-        .team{ color: var(--cloud); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .r{ display:grid; grid-template-columns: 1fr 2.8rem minmax(0,1fr); gap:10px; align-items:center; font-size:22px; }
+        .team{ color:var(--cloud); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .serve{ text-align:center; }
         .grid{ display:grid; gap:8px; }
-        .box{
-          background: var(--muted); color: #0b1419; border-radius: 10px; min-height: 1.9em;
-          display:flex; align-items:center; justify-content:center; font-weight:800;
-        }
+        .box{ background:var(--muted); color:#0b1419; border-radius:10px; min-height:1.9em; display:flex; align-items:center; justify-content:center; font-weight:800; }
       `}</style>
 
       <section className="card">
