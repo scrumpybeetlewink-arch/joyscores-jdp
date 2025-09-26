@@ -85,7 +85,8 @@ export default function LivePage() {
         .row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.28em; }
         .teamline{ color:var(--cloud); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
         .serve{ text-align:center; }
-        .grid{ display:grid; gap:.6rem; grid-template-columns: repeat(${maxSets}+1,1fr); }
+        /* ✅ FIX: compute columns in JS, not 3+1 literal */
+        .grid{ display:grid; gap:.6rem; grid-template-columns: repeat(${(0 as any) || ''}${maxSets + 1}, 1fr); }
         .box{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.4em; display:flex; align-items:center; justify-content:center; font-weight:800; }
       `}</style>
 
