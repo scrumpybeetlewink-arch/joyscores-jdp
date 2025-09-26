@@ -63,36 +63,27 @@ export default function LivePage() {
     const cells = Array.from({length:maxSets}).map((_,i)=> i<finished ? (side==="p1"?sets.p1[i]??"":sets.p2[i]??"") : i===finished ? (side==="p1"?games.p1:games.p2) : "");
     const pts = s.tiebreak ? `TB ${s.tb[side]}` : s.points[side];
 
+    const boxStyle: React.CSSProperties = { background:"#748D92", color:"#0b1419", borderRadius:12, minHeight:"2.4em", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800 };
+
     return (
-      <div className="row">
-        <div className="teamline">{line}</div>
-        <div className="serve">{s.server===side?"🎾":""}</div>
-        <div className="grid">{cells.map((v,i)=><div key={i} className="box">{v}</div>)}<div className="box">{String(pts)}</div></div>
+      <div className="row" style={{display:"grid",gridTemplateColumns:"1fr 3rem minmax(0,1fr)",gap:"1rem",alignItems:"center",fontSize:"1.28em"}}>
+        <div className="teamline" style={{color:"#D3D9D4",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{line}</div>
+        <div className="serve" style={{textAlign:"center"}}>{s.server===side?"🎾":""}</div>
+        <div className="grid" style={{display:"grid",gap:".6rem",gridTemplateColumns:`repeat(${maxSets+1}, 1fr)`}}>
+          {cells.map((v,i)=><div key={i} className="box" style={boxStyle}>{v}</div>)}
+          <div className="box" style={boxStyle}>{String(pts)}</div>
+        </div>
       </div>
     );
   }
 
   return (
-    <main className="wrap">
-      <style>{`
-        :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; }
-        .wrap{ min-height:100vh; background:var(--ink); display:flex; align-items:center; justify-content:center; padding:2vh 2vw; }
-        .card{ width:min(1100px,95vw); background:var(--ink2); color:#fff; border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,.25); padding:1rem 1.25rem; }
-        .header{ text-align:center; padding-bottom:.8rem; border-bottom:1px solid rgba(211,217,212,.16); }
-        .court{ font-size:1.5em; font-weight:800; color:var(--cloud); }
-
-        .rows{ display:grid; gap:.9rem; margin-top:.9rem; }
-        .row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.28em; }
-        .teamline{ color:var(--cloud); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-        .serve{ text-align:center; }
-        /* ✅ FIX: compute columns in JS, not 3+1 literal */
-        .grid{ display:grid; gap:.6rem; grid-template-columns: repeat(${(0 as any) || ''}${maxSets + 1}, 1fr); }
-        .box{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.4em; display:flex; align-items:center; justify-content:center; font-weight:800; }
-      `}</style>
-
-      <section className="card">
-        <div className="header"><div className="court">{s.meta?.name || "Centre Court"}</div></div>
-        <div className="rows">
+    <main className="wrap" style={{minHeight:"100vh",background:"#212A31",display:"flex",alignItems:"center",justifyContent:"center",padding:"2vh 2vw"}}>
+      <section className="card" style={{width:"min(1100px,95vw)",background:"#0B1B2B",color:"#fff",borderRadius:16,boxShadow:"0 6px 20px rgba(0,0,0,.25)",padding:"1rem 1.25rem"}}>
+        <div className="header" style={{textAlign:"center",paddingBottom:".8rem",borderBottom:"1px solid rgba(211,217,212,.16)"}}>
+          <div className="court" style={{fontSize:"1.5em",fontWeight:800,color:"#D3D9D4"}}>{s.meta?.name || "Centre Court"}</div>
+        </div>
+        <div className="rows" style={{display:"grid",gap:".9rem",marginTop:".9rem"}}>
           <Row side="p1" />
           <Row side="p2" />
         </div>
