@@ -1,8 +1,16 @@
 "use client";
 
-export default function IndexPage() {
-  const courts = ["court1", "court2", "court3", "court4", "court5"];
+import Link from "next/link";
 
+const courts = [
+  { id: "court1", label: "Court 1" },
+  { id: "court2", label: "Court 2" },
+  { id: "court3", label: "Court 3" },
+  { id: "court4", label: "Court 4" },
+  { id: "court5", label: "Court 5" },
+];
+
+export default function IndexPage() {
   return (
     <main
       style={{
@@ -20,52 +28,86 @@ export default function IndexPage() {
           background: "#0E1B24",
           border: "1px solid rgba(255,255,255,.06)",
           borderRadius: 18,
-          padding: 28,
+          boxShadow: "0 18px 60px rgba(0,0,0,.35)",
+          padding: "28px 28px 24px",
         }}
       >
         <h1
           style={{
             textAlign: "center",
             fontWeight: 900,
+            letterSpacing: 1,
             marginBottom: 18,
             fontSize: "clamp(26px,3vw,36px)",
           }}
         >
-          JoyScores Courts
+          JoyScores — Courts
         </h1>
-        <div style={{ display: "grid", gap: 16 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr",
+            gap: 16,
+          }}
+        >
           {courts.map((c) => (
-            <div key={c} style={{ display: "flex", gap: 12 }}>
-              <a
-                href={`/controller?court=${c}`}
+            <div
+              key={c.id}
+              style={{
+                background: "#13202A",
+                borderRadius: 12,
+                padding: 16,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              <div
                 style={{
-                  flex: 1,
-                  padding: "14px 0",
-                  borderRadius: 12,
-                  textAlign: "center",
-                  background: "#2A5B6C",
-                  color: "#fff",
-                  textDecoration: "none",
                   fontWeight: 700,
+                  fontSize: 20,
+                  marginBottom: 4,
                 }}
               >
-                Controller {c}
-              </a>
-              <a
-                href={`/live?court=${c}`}
+                {c.label}
+              </div>
+              <div
                 style={{
-                  flex: 1,
-                  padding: "14px 0",
-                  borderRadius: 12,
-                  textAlign: "center",
-                  background: "#6C8086",
-                  color: "#0b1419",
-                  textDecoration: "none",
-                  fontWeight: 700,
+                  display: "flex",
+                  gap: 12,
                 }}
               >
-                Live {c}
-              </a>
+                <Link
+                  href={`/controller?court=${c.id}`}
+                  style={{
+                    flex: 1,
+                    textAlign: "center",
+                    background: "#2A5B6C",
+                    borderRadius: 10,
+                    padding: "12px 0",
+                    color: "#fff",
+                    textDecoration: "none",
+                    fontWeight: 700,
+                  }}
+                >
+                  Controller
+                </Link>
+                <Link
+                  href={`/live?court=${c.id}`}
+                  style={{
+                    flex: 1,
+                    textAlign: "center",
+                    background: "#6C8086",
+                    borderRadius: 10,
+                    padding: "12px 0",
+                    color: "#0b1419",
+                    textDecoration: "none",
+                    fontWeight: 700,
+                  }}
+                >
+                  Live
+                </Link>
+              </div>
             </div>
           ))}
         </div>
