@@ -42,16 +42,38 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      - name: Build (Next.js)
+      # Next 15 + output:export -> build writes static files to out/
+      - name: Build (Next.js static export)
         run: pnpm build
 
-      - name: Export static
-        run: npx next export
-
-      - name: List exported HTML (non-blocking)
+      - name: Sanity — exported routes exist
         run: |
           echo "---- out/ listing (html) ----"
-          find out -maxdepth 2 -type f \( -name 'index.html' -o -name '*.html' \) -print | sed 's#^#out/#' || true
+          find out -maxdepth 2 -type f \( -name 'index.html' -o -name '*.html' \) | sed 's#^#out/#' | sort || true
+
+          # controller: allow /controller/index.html OR /controller.html
+          if [[ -f out/controller/index.html ]] || [[ -f out/controller.html ]]; then
+            echo "OK: controller exported"
+          else
+            echo "::error ::missing out/controller/index.html"
+            exit 1
+          fi
+
+          # live: allow /live/index.html OR /live.html
+          if [[ -f out/live/index.html ]] || [[ -f out/live.html ]]; then
+            echo "OK: live exported"
+          else
+            echo "::error ::missing out/live/index.html"
+            exit 1
+          fi
+
+          # index
+          if [[ -f out/index.html ]]; then
+            echo "OK: index exported"
+          else
+            echo "::error ::missing out/index.html"
+            exit 1
+          fi
 
       - name: Deploy to Firebase Hosting (LIVE)
         uses: FirebaseExtended/action-hosting-deploy@v0
