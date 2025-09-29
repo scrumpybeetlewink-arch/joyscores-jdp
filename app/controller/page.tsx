@@ -140,9 +140,9 @@ export default function ControllerPage() {
         :root{ --ink:#212A31; --ink2:#0B1B2B; --primary:#124E66; --muted:#748D92; --cloud:#D3D9D4; }
         .wrap{ background:var(--ink); min-height:100vh; padding:20px; }
         .card{ background:var(--ink2); color:#fff; border-radius:16px; padding:1.2rem; box-shadow:0 6px 20px rgba(0,0,0,.25); max-width:1100px; margin:auto; }
-        .head{ display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:1rem; }
+        .head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; }
         .title{ font-size:1.4em; font-weight:800; color:var(--cloud); }
-        .select{ width:12em; border-radius:9999px; height:2.6em; margin-left:.8rem; }
+        .select{ width:9em; height:2.2em; font-size:.95em; border-radius:20px; padding:0 .6em; }
 
         .row{ display:grid; grid-template-columns:1fr 2.8em minmax(0,1fr); gap:.8rem; align-items:center; font-size:1.2em; margin:.6rem 0; }
         .teamline{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
