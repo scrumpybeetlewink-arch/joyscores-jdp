@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, set } from "firebase/database";
 
+/** ---------- Types ---------- */
 type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
 type BestOf = 3 | 5;
@@ -21,8 +22,24 @@ type ScoreState = {
   ts?: number;
 };
 
+/** ---------- UI helpers ---------- */
+const COUNTRIES: Array<[flag: string, name: string]> = [
+  ["🇲🇾","Malaysia"],["🇸🇬","Singapore"],["🇹🇭","Thailand"],["🇮🇩","Indonesia"],
+  ["🇵🇭","Philippines"],["🇻🇳","Vietnam"],["🇮🇳","India"],["🇯🇵","Japan"],
+  ["🇰🇷","South Korea"],["🇨🇳","China"],["🇺🇸","United States"],["🇨🇦","Canada"],
+  ["🇬🇧","United Kingdom"],["🇫🇷","France"],["🇩🇪","Germany"],["🇪🇸","Spain"],
+  ["🇮🇹","Italy"],["🇧🇷","Brazil"],["🇦🇷","Argentina"],["🇿🇦","South Africa"],["🏳️","(None)"]
+];
+
+const nameOr = (n: string, fb: string) => (n?.trim() ? n : fb);
+const nextPoint = (p: Point): Point =>
+  p === 0 ? 15 : p === 15 ? 30 : p === 30 ? 40 : p === 40 ? "Ad" : "Ad";
+const prevPoint = (p: Point): Point =>
+  p === 15 ? 0 : p === 30 ? 15 : p === 40 ? 30 : 40;
+
+/** ---------- Defaults ---------- */
 const defaultState: ScoreState = {
-  meta: { name: "Court", bestOf: 3 },
+  meta: { name: "Centre Court", bestOf: 3 },
   players: {
     "1a": { name: "", cc: "🇲🇾" },
     "1b": { name: "", cc: "🇲🇾" },
@@ -35,6 +52,7 @@ const defaultState: ScoreState = {
   tiebreak: false,
   tb: { p1: 0, p2: 0 },
   server: "p1",
+  ts: undefined,
 };
 
 function normalize(v: any): ScoreState {
@@ -46,10 +64,30 @@ function normalize(v: any): ScoreState {
       name: v?.meta?.name ?? defaultState.meta.name,
       bestOf: (v?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
     },
+    players: {
+      "1a": { name: v?.players?.["1a"]?.name ?? "", cc: v?.players?.["1a"]?.cc ?? "🇲🇾" },
+      "1b": { name: v?.players?.["1b"]?.name ?? "", cc: v?.players?.["1b"]?.cc ?? "🇲🇾" },
+      "2a": { name: v?.players?.["2a"]?.name ?? "", cc: v?.players?.["2a"]?.cc ?? "🇲🇾" },
+      "2b": { name: v?.players?.["2b"]?.name ?? "", cc: v?.players?.["2b"]?.cc ?? "🇲🇾" },
+    },
+    points: { p1: (v?.points?.p1 ?? 0) as Point, p2: (v?.points?.p2 ?? 0) as Point },
+    games: { p1: Number(v?.games?.p1) || 0, p2: Number(v?.games?.p2) || 0 },
+    sets: {
+      p1: Array.isArray(v?.sets?.p1) ? v.sets.p1 : [],
+      p2: Array.isArray(v?.sets?.p2) ? v.sets.p2 : [],
+    },
+    tiebreak: !!v?.tiebreak,
+    tb: { p1: Number(v?.tb?.p1) || 0, p2: Number(v?.tb?.p2) || 0 },
+    server: v?.server === "p1" || v?.server === "p2" ? v.server : "p1",
+    ts: typeof v?.ts === "number" ? v.ts : undefined,
   };
 }
 
-export default function LivePage() {
+/** =========================================================
+ *  Controller — per-court (isolated by courtId)
+ *  =========================================================
+ */
+export default function ControllerPage() {
   const params = useParams<{ courtId: string }>();
   const courtId = String(params?.courtId || "court1");
 
@@ -59,6 +97,7 @@ export default function LivePage() {
   const [s, setS] = useState<ScoreState>(defaultState);
   const [courtName, setCourtName] = useState<string>(defaultState.meta.name);
 
+  // subscribe
   useEffect(() => {
     let off1 = () => {};
     let off2 = () => {};
@@ -73,22 +112,101 @@ export default function LivePage() {
     return () => { off1?.(); off2?.(); };
   }, [COURT_PATH, META_NAME_PATH]);
 
-  const maxSets = useMemo(() => ((s?.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s?.meta?.bestOf]);
+  // commit helpers
+  const commit = async (next: ScoreState) => {
+    next.ts = Date.now();
+    await set(ref(db, COURT_PATH), next);
+  };
+  const clone = () => JSON.parse(JSON.stringify(s)) as ScoreState;
+  const maxSets = useMemo(() => ((s.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s.meta?.bestOf]);
 
+  // scoring
+  function winGame(n: ScoreState, side: Side) {
+    n.games[side] += 1;
+    n.points = { p1: 0, p2: 0 };
+    const a = n.games.p1, b = n.games.p2;
+    const lead = Math.abs(a - b);
+    if ((a >= 6 || b >= 6) && lead >= 2) {
+      n.sets.p1.push(a); n.sets.p2.push(b);
+      n.games = { p1: 0, p2: 0 };
+      n.tiebreak = false; n.tb = { p1: 0, p2: 0 };
+    } else if (a === 6 && b === 6) {
+      n.tiebreak = true; n.tb = { p1: 0, p2: 0 };
+    }
+  }
+
+  function addPoint(side: Side, dir: 1 | -1) {
+    const n = clone();
+
+    if (n.tiebreak) {
+      n.tb[side] = Math.max(0, n.tb[side] + dir);
+      const A = n.tb.p1, B = n.tb.p2;
+      if ((A >= 7 || B >= 7) && Math.abs(A - B) >= 2) {
+        if (A > B) { n.sets.p1.push(n.games.p1 + 1); n.sets.p2.push(n.games.p2); }
+        else { n.sets.p2.push(n.games.p2 + 1); n.sets.p1.push(n.games.p1); }
+        n.games = { p1: 0, p2: 0 };
+        n.points = { p1: 0, p2: 0 };
+        n.tiebreak = false; n.tb = { p1: 0, p2: 0 };
+      }
+      return commit(n);
+    }
+
+    if (dir === 1) {
+      const opp: Side = side === "p1" ? "p2" : "p1";
+      const ps = n.points[side], po = n.points[opp];
+      if (ps === 40 && (po === 0 || po === 15 || po === 30)) winGame(n, side);
+      else if (ps === 40 && po === "Ad") n.points[opp] = 40;
+      else if (ps === 40 && po === 40) n.points[side] = "Ad";
+      else if (ps === "Ad") winGame(n, side);
+      else n.points[side] = nextPoint(ps);
+    } else {
+      n.points[side] = prevPoint(n.points[side]);
+    }
+    commit(n);
+  }
+
+  function toggleServer() {
+    const n = clone();
+    n.server = n.server === "p1" ? "p2" : "p1";
+    commit(n);
+  }
+
+  function resetGame() {
+    const n = clone();
+    const { p1, p2 } = n.games;
+    if (p1 > p2) n.games.p1 = Math.max(0, p1 - 1);
+    else if (p2 > p1) n.games.p2 = Math.max(0, p2 - 1);
+    commit(n);
+  }
+
+  async function newMatch() {
+    const next: ScoreState = {
+      ...defaultState,
+      meta: { name: courtName, bestOf: (s.meta?.bestOf ?? 3) as BestOf },
+      server: "p1",
+      ts: Date.now(),
+    };
+    await set(ref(db, COURT_PATH), next);
+    await set(ref(db, META_NAME_PATH), courtName || ""); // keep leaf listener happy
+  }
+
+  async function updatePlayer(k: "1a"|"1b"|"2a"|"2b", f: "name"|"cc", v: string) {
+    const n = clone(); (n.players[k] as any)[f] = v; await commit(n);
+  }
+  async function updateBestOf(v: BestOf) { const n = clone(); n.meta.bestOf = v; await commit(n); }
+
+  /** ---------- Row (spacing matches Live) ---------- */
   const Row = ({ side }: { side: Side }) => {
-    const players = s.players;
-    const sets = s.sets;
-    const games = s.games;
-
-    const p1a = players["1a"].name?.trim() || "Player 1";
-    const p1b = players["1b"].name?.trim() || "Player 2";
-    const p2a = players["2a"].name?.trim() || "Player 3";
-    const p2b = players["2b"].name?.trim() || "Player 4";
+    const players = s.players, sets = s.sets, games = s.games;
+    const p1a = nameOr(players["1a"].name, "Player 1");
+    const p1b = nameOr(players["1b"].name, "Player 2");
+    const p2a = nameOr(players["2a"].name, "Player 3");
+    const p2b = nameOr(players["2b"].name, "Player 4");
 
     const line =
       side === "p1"
-        ? `${s.players["1a"].cc} ${p1a} / ${s.players["1b"].cc} ${p1b}`
-        : `${s.players["2a"].cc} ${p2a} / ${s.players["2b"].cc} ${p2b}`;
+        ? `${players["1a"].cc} ${p1a} / ${players["1b"].cc} ${p1b}`
+        : `${players["2a"].cc} ${p2a} / ${players["2b"].cc} ${p2b}`;
 
     const finished = Math.max(sets.p1.length, sets.p2.length);
     const setCells = Array.from({ length: maxSets }).map((_, i) => {
@@ -96,47 +214,120 @@ export default function LivePage() {
       if (i === finished) return side === "p1" ? (games.p1 ?? "") : (games.p2 ?? "");
       return "";
     });
-
     const points = s.tiebreak ? `TB ${s.tb[side]}` : s.points[side];
 
     return (
-      <div className="row">
-        <div className="teamline">{line}</div>
-        <div className="serve">{s.server === side ? "🎾" : ""}</div>
-        <div className="scoreGrid" style={{ gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)` }}>
-          {setCells.map((v, i) => (
-            <div key={i} className="scoreBox">{v}</div>
-          ))}
-          <div className="scoreBox">{String(points)}</div>
+      <div className="jc-row">
+        <div className="jc-teamline">{line}</div>
+        <div className="jc-serve">{s.server === side ? "🎾" : ""}</div>
+        <div className="jc-grid" style={{ gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)` }}>
+          {setCells.map((v, i) => <div key={i} className="jc-box">{v}</div>)}
+          <div className="jc-box">{String(points)}</div>
         </div>
       </div>
     );
   };
 
   return (
-    <main className="wrap">
+    <div className="jc-wrap">
       <style>{`
-        :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; }
-        .wrap{ min-height:100vh; background:var(--ink); display:flex; align-items:center; justify-content:center; padding:2vh 2vw; }
-        .card{ width:min(1100px,95vw); background:var(--ink2); color:#fff; border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,.25); padding:1rem 1.25rem; }
-        .header{ text-align:center; padding-bottom:.8rem; border-bottom:1px solid rgba(211,217,212,.16); }
-        .court{ font-size:1.5em; font-weight:800; color:var(--cloud); }
+        :root{ --ink:#212A31; --ink2:#0B1B2B; --primary:#124E66; --muted:#748D92; --cloud:#D3D9D4; }
+        .jc-wrap{ background:var(--ink); min-height:100vh; padding:18px 2vw; color:#fff; }
+        .jc-card{ background:var(--ink2); color:#fff; border:1px solid rgba(0,0,0,.15); border-radius:16px; padding:1.25rem; box-shadow:0 6px 20px rgba(0,0,0,.25); width:min(1100px,92vw); margin:0 auto; }
 
-        .rows{ display:grid; gap:.9rem; margin-top:.9rem; }
-        .row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.28em; }
-        .teamline{ color:var(--cloud); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-        .serve{ text-align:center; }
-        .scoreGrid{ display:grid; gap:.6rem; }
-        .scoreBox{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.4em; display:flex; align-items:center; justify-content:center; font-weight:800; }
+        .jc-head{ display:flex; justify-content:space-between; align-items:flex-end; gap:1rem; margin-bottom:10px; }
+        .jc-title{ color:var(--cloud); font-size:1.4em; font-weight:800; }
+        .jc-select{ width:12em; border-radius:9999px; height:2.6em; background:var(--cloud); color:#0b1419; border:1px solid var(--muted); padding:0 .9em; }
+
+        .jc-row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.28em; margin:10px 0; }
+        .jc-teamline{ color:var(--cloud); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+        .jc-serve{ text-align:center; }
+        .jc-grid{ display:grid; gap:.6rem; }
+        .jc-box{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.4em; display:flex; align-items:center; justify-content:center; font-weight:800; }
+
+        .jc-panels{ display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap:1rem; }
+        @media (max-width: 980px){ .jc-panels{ grid-template-columns: 1fr; } }
+        .jc-panel{ background:rgba(33,42,49,.45); border:1px solid rgba(211,217,212,.12); border-radius:12px; padding:1rem; }
+        .jc-g2{ display:grid; grid-template-columns: 1fr 1fr; gap:.75rem; }
+
+        .jc-input{ width:100%; background:#D3D9D4; color:#0b1419; border:1px solid var(--muted); border-radius:10px; height:2.6em; padding:0 .9em; }
+        .jc-btnRow{ display:grid; grid-template-columns: 1fr 1fr; gap:.75rem; margin-top:.5rem; }
+        .jc-btn{ border:1px solid transparent; background:var(--primary); color:#fff; border-radius:12px; height:3.2em; font-weight:800; font-size:1.9rem; }
+
+        .jc-footer{ display:flex; gap:.75rem; flex-wrap:wrap; justify-content:center; margin-top:1rem; }
+        .jc-btnSm{ height:2.8em; font-size:1rem; padding:0 1.1em; border-radius:12px; border:1px solid transparent; background:var(--primary); color:#fff; font-weight:700; }
+        .jc-danger{ background:#8b2e2e; }
+        .jc-gold{ background:#748D92; color:#0b1419; }
       `}</style>
 
-      <section className="card">
-        <div className="header"><div className="court">{courtName || "Court"}</div></div>
-        <div className="rows">
+      <div className="jc-card">
+        <div className="jc-head">
+          <div className="jc-title">{courtName || "Court"}</div>
+          <select className="jc-select" value={s.meta?.bestOf ?? 3} onChange={(e)=>updateBestOf(Number(e.target.value) as BestOf)}>
+            <option value={3}>Best of 3</option>
+            <option value={5}>Best of 5</option>
+          </select>
+        </div>
+
+        <div>
           <Row side="p1" />
           <Row side="p2" />
         </div>
-      </section>
-    </main>
+
+        <hr style={{ border: "none", height: 1, background: "rgba(211,217,212,.18)", margin: "12px 0" }} />
+
+        <div className="jc-panels">
+          {/* Team 1 */}
+          <div className="jc-panel">
+            <div className="jc-g2">
+              <div>
+                <input className="jc-input" placeholder="Player 1" value={s.players["1a"].name} onChange={(e)=>updatePlayer("1a","name",e.target.value)} />
+                <select className="jc-input" style={{marginTop:".5rem"}} value={s.players["1a"].cc} onChange={(e)=>updatePlayer("1a","cc",e.target.value)}>
+                  {COUNTRIES.map(([f,n]) => <option key={f+n} value={f}>{f} {n}</option>)}
+                </select>
+              </div>
+              <div>
+                <input className="jc-input" placeholder="Player 2" value={s.players["1b"].name} onChange={(e)=>updatePlayer("1b","name",e.target.value)} />
+                <select className="jc-input" style={{marginTop:".5rem"}} value={s.players["1b"].cc} onChange={(e)=>updatePlayer("1b","cc",e.target.value)}>
+                  {COUNTRIES.map(([f,n]) => <option key={f+n} value={f}>{f} {n}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="jc-btnRow">
+              <button className="jc-btn" onClick={()=>addPoint("p1", +1)}>+</button>
+              <button className="jc-btn" onClick={()=>addPoint("p1", -1)}>−</button>
+            </div>
+          </div>
+
+          {/* Team 2 */}
+          <div className="jc-panel">
+            <div className="jc-g2">
+              <div>
+                <input className="jc-input" placeholder="Player 3" value={s.players["2a"].name} onChange={(e)=>updatePlayer("2a","name",e.target.value)} />
+                <select className="jc-input" style={{marginTop:".5rem"}} value={s.players["2a"].cc} onChange={(e)=>updatePlayer("2a","cc",e.target.value)}>
+                  {COUNTRIES.map(([f,n]) => <option key={f+n} value={f}>{f} {n}</option>)}
+                </select>
+              </div>
+              <div>
+                <input className="jc-input" placeholder="Player 4" value={s.players["2b"].name} onChange={(e)=>updatePlayer("2b","name",e.target.value)} />
+                <select className="jc-input" style={{marginTop:".5rem"}} value={s.players["2b"].cc} onChange={(e)=>updatePlayer("2b","cc",e.target.value)}>
+                  {COUNTRIES.map(([f,n]) => <option key={f+n} value={f}>{f} {n}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="jc-btnRow">
+              <button className="jc-btn" onClick={()=>addPoint("p2", +1)}>+</button>
+              <button className="jc-btn" onClick={()=>addPoint("p2", -1)}>−</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="jc-footer">
+          <button className="jc-btnSm jc-danger" onClick={resetGame}>Reset Game</button>
+          <button className="jc-btnSm jc-gold" onClick={newMatch}>New Match</button>
+          <button className="jc-btnSm" onClick={toggleServer}>Serve🎾</button>
+        </div>
+      </div>
+    </div>
   );
 }
