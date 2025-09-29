@@ -28,7 +28,6 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      # Write .env.local at the REPO ROOT (do not change working-directory)
       - name: Create .env.local from repo variables
         run: |
           cat > .env.local << 'EOF'
@@ -40,19 +39,15 @@ jobs:
           NEXT_PUBLIC_FB_APP_ID=${{ vars.NEXT_PUBLIC_FB_APP_ID }}
           EOF
 
-      # Install at the REPO ROOT
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      # Build at the REPO ROOT so Next.js can see /app
       - name: Build (Next.js)
         run: pnpm build
 
-      # Export static site to out/ (harmless if next.config.js already has output:'export')
       - name: Export static
-        run: npx next export -o out
+        run: npx next export
 
-      # (Optional) Non-failing listing for sanity; keep this non-blocking
       - name: List exported HTML (non-blocking)
         run: |
           echo "---- out/ listing (html) ----"
