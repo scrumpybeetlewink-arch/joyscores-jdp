@@ -1,16 +1,12 @@
+// app/live/page.tsx
 "use client";
-export const dynamic = "force-static";
-
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-/**
- * Redirect /live -> /live/court1
- */
+export const dynamic = "force-static";
+
 export default function LiveIndexRedirect() {
-  const router = useRouter();
-  useEffect(() => {
-    router.replace("/live/court1");
-  }, [router]);
+  const r = useRouter();
+  useEffect(() => { r.replace("/live/court1"); }, [r]);
   return null;
 }
