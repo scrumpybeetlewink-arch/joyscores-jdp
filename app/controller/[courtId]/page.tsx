@@ -7,13 +7,14 @@ export const dynamicParams = false;
 type Params = { courtId: string };
 
 export function generateStaticParams(): Params[] {
-  // Add/rename courts here when you scale
   return ["court1", "court2", "court3", "court4", "court5"].map((c) => ({ courtId: c }));
 }
 
-export default function ControllerPageServer({ params }: { params: Params }) {
-  // Render the client component and pass the param as a prop
-  return <ClientController courtId={params.courtId} />;
+export default async function ControllerPageServer(
+  { params }: { params: Promise<Params> }
+) {
+  const { courtId } = await params;
+  return <ClientController courtId={courtId} />;
 }
 
 // Import AFTER exports to keep this file server-only
