@@ -1,10 +1,10 @@
-// 🔵 Build-time params so /controller/court1..court5 are exported
+"use client";
+export const dynamic = "force-static";
+
+// Prebuild /controller/court1..court5 during export
 export async function generateStaticParams() {
   return ["court1", "court2", "court3", "court4", "court5"].map((courtId) => ({ courtId }));
 }
-export const dynamic = "force-static";
-
-"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -36,10 +36,10 @@ const COUNTRIES: Array<[flag: string, name: string]> = [
   ["🇪🇸","Spain"],["🇮🇹","Italy"],["🇧🇷","Brazil"],["🇦🇷","Argentina"],["🇿🇦","South Africa"],["🏳️","(None)"]
 ];
 
-/** ---------- Helpers ---------- */
 const flag = (cc: string) => cc || "🏳️";
-const nextPoint = (p: Point): Point => (p === 0 ? 15 : p === 15 ? 30 : p === 30 ? 40 : p === 40 ? "Ad" : "Ad");
-const prevPoint = (p: Point): Point => (p === 15 ? 0 : p === 30 ? 15 : p === 40 ? 30 : 40);
+type DefP = 0 | 15 | 30 | 40 | "Ad";
+const nextPoint = (p: DefP): DefP => (p === 0 ? 15 : p === 15 ? 30 : p === 30 ? 40 : p === 40 ? "Ad" : "Ad");
+const prevPoint = (p: DefP): DefP => (p === 15 ? 0 : p === 30 ? 15 : p === 40 ? 30 : 40);
 const nameOrLabel = (n: string, fb: string) => (n?.trim() ? n : fb);
 
 const defaultState: ScoreState = {
@@ -132,9 +132,9 @@ export default function ControllerPage() {
       else if (ps === 40 && po === "Ad") n.points[opp] = 40;
       else if (ps === 40 && po === 40) n.points[side] = "Ad";
       else if (ps === "Ad") winGame(n, side);
-      else n.points[side] = nextPoint(ps);
+      else n.points[side] = nextPoint(ps as DefP);
     } else {
-      n.points[side] = prevPoint(n.points[side]);
+      n.points[side] = prevPoint(n.points[side] as DefP);
     }
     commit(n);
   }
@@ -161,7 +161,6 @@ export default function ControllerPage() {
 
   const maxSets = useMemo(() => ((s.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s.meta?.bestOf]);
 
-  /** ----- UI helpers (spacing aligned with Live) ----- */
   const ScoreRow = ({ side }: { side: Side }) => {
     const players = s.players ?? defaultState.players;
     const sets = s.sets ?? defaultState.sets;
@@ -208,7 +207,6 @@ export default function ControllerPage() {
         .title{ color:var(--cloud); font-size:1.5em; font-weight:800; }
         .select{ width:12em; border-radius:9999px; height:2.6em; background:var(--cloud); color:#0b1419; border:1px solid var(--muted); padding:0 .9em; }
 
-        /* spacing matches Live */
         .row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.28em; margin:10px 0; }
         .teamline{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--cloud); }
         .serve{ text-align:center; }
@@ -238,7 +236,6 @@ export default function ControllerPage() {
           <hr style={{opacity:.15, margin:"12px 0"}} />
 
           <div className="panes">
-            {/* Team A */}
             <div className="pane">
               <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:".75rem"}}>
                 <div>
@@ -264,7 +261,6 @@ export default function ControllerPage() {
               </div>
             </div>
 
-            {/* Team B */}
             <div className="pane">
               <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:".75rem"}}>
                 <div>
