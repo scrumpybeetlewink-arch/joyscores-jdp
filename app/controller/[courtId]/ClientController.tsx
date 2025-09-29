@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue, set } from "firebase/database";
 
-/** ---------- Types ---------- */
 type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
 type BestOf = 3 | 5;
@@ -58,10 +57,7 @@ function normalize(v: any): ScoreState {
   return {
     ...d,
     ...v,
-    meta: {
-      name: v?.meta?.name ?? "",
-      bestOf: (v?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
-    },
+    meta: { name: v?.meta?.name ?? "", bestOf: (v?.meta?.bestOf === 5 ? 5 : 3) as BestOf },
     players: {
       "1a": { name: v?.players?.["1a"]?.name ?? "", cc: v?.players?.["1a"]?.cc ?? "🇲🇾" },
       "1b": { name: v?.players?.["1b"]?.name ?? "", cc: v?.players?.["1b"]?.cc ?? "🇲🇾" },
@@ -103,10 +99,7 @@ export default function ClientController({ courtId }: { courtId: string }) {
     (async () => {
       try { await ensureAnonLogin(); } catch {}
       unsub1 = onValue(ref(db, COURT_PATH), (snap) => setS(normalize(snap.val())));
-      unsub2 = onValue(ref(db, META_NAME_PATH), (snap) => {
-        const v = snap.val();
-        setCourtName(typeof v === "string" ? v : "");
-      });
+      unsub2 = onValue(ref(db, META_NAME_PATH), (snap) => setCourtName(typeof snap.val() === "string" ? snap.val() : ""));
     })();
     return () => { unsub1?.(); unsub2?.(); };
   }, [COURT_PATH, META_NAME_PATH]);
@@ -199,19 +192,16 @@ export default function ClientController({ courtId }: { courtId: string }) {
   const maxSets = useMemo(() => ((s.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s.meta?.bestOf]);
 
   function renderRow(side: Side) {
-    const players = s.players;
-    const sets = s.sets;
-    const games = s.games;
+    const p = s.players, sets = s.sets, games = s.games;
 
-    const p1a = nameOrLabel(players["1a"].name, "Player 1");
-    const p1b = nameOrLabel(players["1b"].name, "Player 2");
-    const p2a = nameOrLabel(players["2a"].name, "Player 3");
-    const p2b = nameOrLabel(players["2b"].name, "Player 4");
+    const p1a = nameOrLabel(p["1a"].name, "Player 1");
+    const p1b = nameOrLabel(p["1b"].name, "Player 2");
+    const p2a = nameOrLabel(p["2a"].name, "Player 3");
+    const p2b = nameOrLabel(p["2b"].name, "Player 4");
 
-    const line =
-      side === "p1"
-        ? `${flag(players["1a"].cc)} ${p1a} / ${flag(players["1b"].cc)} ${p1b}`
-        : `${flag(players["2a"].cc)} ${p2a} / ${flag(players["2b"].cc)} ${p2b}`;
+    const line = side === "p1"
+      ? `${flag(p["1a"].cc)} ${p1a} / ${flag(p["1b"].cc)} ${p1b}`
+      : `${flag(p["2a"].cc)} ${p2a} / ${flag(p["2b"].cc)} ${p2b}`;
 
     const finished = Math.max(sets.p1.length, sets.p2.length);
     const setCells = Array.from({ length: maxSets }).map((_, i) => {
@@ -240,16 +230,12 @@ export default function ClientController({ courtId }: { courtId: string }) {
         gap: "1rem",
         alignItems: "center",
         fontSize: "1.35em",
-        margin: "10px 0"
+        margin: "10px 0",
       }}>
-        <div className="teamline" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {line}
-        </div>
+        <div className="teamline" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{line}</div>
         <div className="serve" style={{ textAlign: "center" }}>{s.server === side ? "🎾" : ""}</div>
         <div className="grid" style={{ display: "grid", gap: ".6rem", gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)` }}>
-          {setCells.map((v, i) => (
-            <div key={i} className="box" style={scoreBoxStyle}>{v}</div>
-          ))}
+          {setCells.map((v, i) => (<div key={i} className="box" style={scoreBoxStyle}>{v}</div>))}
           <div className="box" style={scoreBoxStyle}>{String(points)}</div>
         </div>
       </div>
@@ -277,12 +263,7 @@ export default function ClientController({ courtId }: { courtId: string }) {
         <div className="card">
           <div className="head">
             <div className="title">{courtName || courtId.replace(/^\w/, c => c.toUpperCase())}</div>
-            <select
-              className="select"
-              aria-label="Best of"
-              value={s.meta?.bestOf ?? 3}
-              onChange={(e) => updateBestOf(Number(e.target.value) as BestOf)}
-            >
+            <select className="select" aria-label="Best of" value={s.meta?.bestOf ?? 3} onChange={(e) => updateBestOf(Number(e.target.value) as BestOf)}>
               <option value={3}>Best of 3</option>
               <option value={5}>Best of 5</option>
             </select>
