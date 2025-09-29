@@ -1,20 +1,12 @@
-// app/live/[courtId]/page.tsx
-// Server wrapper: exports static params and renders the client live view.
+// app/live/page.tsx
+"use client";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export const dynamic = "force-static";
-export const dynamicParams = false;
 
-type Params = { courtId: string };
-
-export function generateStaticParams(): Params[] {
-  return ["court1", "court2", "court3", "court4", "court5"].map((c) => ({ courtId: c }));
+export default function LiveIndexRedirect() {
+  const r = useRouter();
+  useEffect(() => { r.replace("/live/court1"); }, [r]);
+  return null;
 }
-
-export default async function LivePageServer(
-  { params }: { params: Promise<Params> }
-) {
-  const { courtId } = await params;
-  return <ClientLive courtId={courtId} />;
-}
-
-import ClientLive from "./ClientLive";
