@@ -1,12 +1,19 @@
-// app/controller/page.tsx
 "use client";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 
-export const dynamic = "force-static";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import ScoreboardController from "./ui";
 
-export default function ControllerIndexRedirect() {
-  const r = useRouter();
-  useEffect(() => { r.replace("/controller/court1"); }, [r]);
-  return null;
+export default function ControllerPage() {
+  return (
+    <Suspense fallback={null}>
+      <ControllerInner />
+    </Suspense>
+  );
+}
+
+function ControllerInner() {
+  const sp = useSearchParams();
+  const courtId = sp.get("court") || "court1";
+  return <ScoreboardController courtId={courtId} />;
 }
