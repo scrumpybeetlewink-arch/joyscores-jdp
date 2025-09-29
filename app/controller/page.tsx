@@ -1,16 +1,16 @@
+"use client";
 export const dynamic = "force-static";
 
-// A tiny client redirect so /controller goes to /controller/court1
-"use client";
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
+/**
+ * Redirect /controller -> /controller/court1
+ */
 export default function ControllerIndexRedirect() {
+  const router = useRouter();
   useEffect(() => {
-    if (typeof window !== "undefined") window.location.replace("/controller/court1");
-  }, []);
-  return (
-    <main style={{minHeight:"60vh",display:"grid",placeItems:"center",color:"#e9edf3",background:"#121a21"}}>
-      <p>Loading controller…</p>
-    </main>
-  );
+    router.replace("/controller/court1");
+  }, [router]);
+  return null;
 }
