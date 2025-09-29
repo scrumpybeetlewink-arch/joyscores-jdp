@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
-import { onValue, ref, set } from "firebase/database";
+import { ref, onValue, set } from "firebase/database";
 
 /** ---------- Types ---------- */
 type Side = "p1" | "p2";
@@ -21,20 +21,28 @@ type ScoreState = {
   ts?: number;
 };
 
-/** ---------- Paths ---------- */
-const COURT_PATH = "/joyscores/court1";
-const META_NAME_PATH = "/joyscores/court1/meta/name";
+/** ---------- Firebase paths (single court; MUST match Index/Live) ---------- */
+const COURT_PATH = "/courts/court1";
+const META_NAME_PATH = "/courts/court1/meta/name";
 
-/** ---------- Helpers ---------- */
-const flag = (cc: string) => cc || "🏳️";
-const nameOrLabel = (n: string, fb: string) => (n?.trim() ? n : fb);
+/** ---------- UI helpers ---------- */
+const COUNTRIES: Array<[flag: string, name: string]> = [
+  ["🇲🇾","Malaysia"],["🇸🇬","Singapore"],["🇹🇭","Thailand"],["🇮🇩","Indonesia"],
+  ["🇵🇭","Philippines"],["🇻🇳","Vietnam"],["🇮🇳","India"],["🇯🇵","Japan"],
+  ["🇰🇷","South Korea"],["🇨🇳","China"],["🇺🇸","United States"],["🇨🇦","Canada"],
+  ["🇬🇧","United Kingdom"],["🇫🇷","France"],["🇩🇪","Germany"],["🇪🇸","Spain"],
+  ["🇮🇹","Italy"],["🇧🇷","Brazil"],["🇦🇷","Argentina"],["🇿🇦","South Africa"],["🏳️","(None)"]
+];
+
+const nameOr = (n: string, fb: string) => (n?.trim() ? n : fb);
 const nextPoint = (p: Point): Point =>
   p === 0 ? 15 : p === 15 ? 30 : p === 30 ? 40 : p === 40 ? "Ad" : "Ad";
-const prevPoint = (p: Point): Point => (p === 15 ? 0 : p === 30 ? 15 : p === 40 ? 30 : 40);
+const prevPoint = (p: Point): Point =>
+  p === 15 ? 0 : p === 30 ? 15 : p === 40 ? 30 : 40;
 
 /** ---------- Defaults ---------- */
 const defaultState: ScoreState = {
-  meta: { name: "", bestOf: 3 },
+  meta: { name: "Centre Court", bestOf: 3 },
   players: {
     "1a": { name: "", cc: "🇲🇾" },
     "1b": { name: "", cc: "🇲🇾" },
@@ -50,50 +58,74 @@ const defaultState: ScoreState = {
   ts: undefined,
 };
 
+/** ---------- Normalize any RTDB snapshot ---------- */
 function normalize(v: any): ScoreState {
   if (!v) return defaultState;
   return {
     ...defaultState,
     ...v,
     meta: {
-      name: v?.meta?.name ?? "",
+      name: v?.meta?.name ?? defaultState.meta.name,
       bestOf: (v?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
     },
+    players: {
+      "1a": { name: v?.players?.["1a"]?.name ?? "", cc: v?.players?.["1a"]?.cc ?? "🇲🇾" },
+      "1b": { name: v?.players?.["1b"]?.name ?? "", cc: v?.players?.["1b"]?.cc ?? "🇲🇾" },
+      "2a": { name: v?.players?.["2a"]?.name ?? "", cc: v?.players?.["2a"]?.cc ?? "🇲🇾" },
+      "2b": { name: v?.players?.["2b"]?.name ?? "", cc: v?.players?.["2b"]?.cc ?? "🇲🇾" },
+    },
+    points: { p1: (v?.points?.p1 ?? 0) as Point, p2: (v?.points?.p2 ?? 0) as Point },
+    games: { p1: Number(v?.games?.p1) || 0, p2: Number(v?.games?.p2) || 0 },
+    sets: {
+      p1: Array.isArray(v?.sets?.p1) ? v.sets.p1 : [],
+      p2: Array.isArray(v?.sets?.p2) ? v.sets.p2 : [],
+    },
+    tiebreak: !!v?.tiebreak,
+    tb: { p1: Number(v?.tb?.p1) || 0, p2: Number(v?.tb?.p2) || 0 },
+    server: v?.server === "p1" || v?.server === "p2" ? v.server : "p1",
+    ts: typeof v?.ts === "number" ? v.ts : undefined,
   };
 }
 
 /** =========================================================
- *  Controller
+ *  Controller (approved UI restored, spacing = Live, full controls)
  *  =========================================================
  */
 export default function ControllerPage() {
   const [s, setS] = useState<ScoreState>(defaultState);
-  const [externalCourtName, setExternalCourtName] = useState("");
+  const [courtName, setCourtName] = useState<string>(defaultState.meta.name);
 
+  // Subscribe to score + name
   useEffect(() => {
     let off1 = () => {};
     let off2 = () => {};
     (async () => {
       try { await ensureAnonLogin(); } catch {}
-      off1 = onValue(ref(db, COURT_PATH), snap => setS(normalize(snap.val())));
-      off2 = onValue(ref(db, META_NAME_PATH), snap => {
+      off1 = onValue(ref(db, COURT_PATH), (snap) => setS(normalize(snap.val())));
+      off2 = onValue(ref(db, META_NAME_PATH), (snap) => {
         const v = snap.val();
-        setExternalCourtName(typeof v === "string" ? v : "");
+        if (typeof v === "string") setCourtName(v);
       });
     })();
     return () => { off1?.(); off2?.(); };
   }, []);
 
-  async function commit(next: ScoreState) {
+  // Commit helpers
+  const commit = async (next: ScoreState) => {
     next.ts = Date.now();
     await set(ref(db, COURT_PATH), next);
-  }
+  };
   const clone = () => JSON.parse(JSON.stringify(s)) as ScoreState;
 
+  const maxSets = useMemo(() => ((s.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s.meta?.bestOf]);
+
+  // Scoring logic
   function winGame(n: ScoreState, side: Side) {
     n.games[side] += 1;
     n.points = { p1: 0, p2: 0 };
-    const a = n.games.p1, b = n.games.p2, lead = Math.abs(a - b);
+    const a = n.games.p1, b = n.games.p2;
+    const lead = Math.abs(a - b);
+
     if ((a >= 6 || b >= 6) && lead >= 2) {
       n.sets.p1.push(a); n.sets.p2.push(b);
       n.games = { p1: 0, p2: 0 };
@@ -105,16 +137,20 @@ export default function ControllerPage() {
 
   function addPoint(side: Side, dir: 1 | -1) {
     const n = clone();
+
     if (n.tiebreak) {
       n.tb[side] = Math.max(0, n.tb[side] + dir);
       const A = n.tb.p1, B = n.tb.p2;
       if ((A >= 7 || B >= 7) && Math.abs(A - B) >= 2) {
         if (A > B) { n.sets.p1.push(n.games.p1 + 1); n.sets.p2.push(n.games.p2); }
         else { n.sets.p2.push(n.games.p2 + 1); n.sets.p1.push(n.games.p1); }
-        n.games = { p1: 0, p2: 0 }; n.points = { p1: 0, p2: 0 }; n.tiebreak = false; n.tb = { p1: 0, p2: 0 };
+        n.games = { p1: 0, p2: 0 };
+        n.points = { p1: 0, p2: 0 };
+        n.tiebreak = false; n.tb = { p1: 0, p2: 0 };
       }
       return commit(n);
     }
+
     if (dir === 1) {
       const opp: Side = side === "p1" ? "p2" : "p1";
       const ps = n.points[side], po = n.points[opp];
@@ -129,167 +165,173 @@ export default function ControllerPage() {
     commit(n);
   }
 
-  function toggleServer() { const n = clone(); n.server = n.server === "p1" ? "p2" : "p1"; commit(n); }
-  function resetGame()   { const n = clone(); const { p1, p2 } = n.games; if (p1 > p2) n.games.p1 = Math.max(0,p1-1); else if (p2 > p1) n.games.p2 = Math.max(0,p2-1); commit(n); }
-  function newMatch()    { commit({ ...defaultState, meta:{ name: externalCourtName, bestOf: s.meta?.bestOf ?? 3 }, server:"p1", ts: Date.now()}); }
+  function toggleServer() {
+    const n = clone();
+    n.server = n.server === "p1" ? "p2" : "p1";
+    commit(n);
+  }
 
-  async function updatePlayer(k:"1a"|"1b"|"2a"|"2b", f:"name"|"cc", v:string) {
+  function resetGame() {
+    const n = clone();
+    const { p1, p2 } = n.games;
+    if (p1 > p2) n.games.p1 = Math.max(0, p1 - 1);
+    else if (p2 > p1) n.games.p2 = Math.max(0, p2 - 1);
+    commit(n);
+  }
+
+  async function newMatch() {
+    const next: ScoreState = {
+      ...defaultState,
+      meta: { name: courtName, bestOf: (s.meta?.bestOf ?? 3) as BestOf },
+      server: "p1",
+      ts: Date.now(),
+    };
+    // Write full node AND leaf name (prevents name listener drift)
+    await set(ref(db, COURT_PATH), next);
+    await set(ref(db, META_NAME_PATH), courtName || "");
+  }
+
+  async function updatePlayer(k: "1a"|"1b"|"2a"|"2b", f: "name"|"cc", v: string) {
     const n = clone(); (n.players[k] as any)[f] = v; await commit(n);
   }
   async function updateBestOf(v: BestOf) { const n = clone(); n.meta.bestOf = v; await commit(n); }
 
-  const maxSets = useMemo(() => ((s.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s.meta?.bestOf]);
-
-  /** ---------- Row renderer (synced with Live spacing) ---------- */
-  function Row({ side }: { side: Side }) {
+  /** ---------- Row (spacing identical to Live) ---------- */
+  const Row = ({ side }: { side: Side }) => {
     const players = s.players, sets = s.sets, games = s.games;
-    const p1a = nameOrLabel(players["1a"].name, "Player 1");
-    const p1b = nameOrLabel(players["1b"].name, "Player 2");
-    const p2a = nameOrLabel(players["2a"].name, "Player 3");
-    const p2b = nameOrLabel(players["2b"].name, "Player 4");
+    const p1a = nameOr(players["1a"].name, "Player 1");
+    const p1b = nameOr(players["1b"].name, "Player 2");
+    const p2a = nameOr(players["2a"].name, "Player 3");
+    const p2b = nameOr(players["2b"].name, "Player 4");
+
     const line =
       side === "p1"
-        ? `${flag(players["1a"].cc)} ${p1a} / ${flag(players["1b"].cc)} ${p1b}`
-        : `${flag(players["2a"].cc)} ${p2a} / ${flag(players["2b"].cc)} ${p2b}`;
+        ? `${players["1a"].cc} ${p1a} / ${players["1b"].cc} ${p1b}`
+        : `${players["2a"].cc} ${p2a} / ${players["2b"].cc} ${p2b}`;
 
     const finished = Math.max(sets.p1.length, sets.p2.length);
     const setCells = Array.from({ length: maxSets }).map((_, i) => {
       if (i < finished) return side === "p1" ? sets.p1[i] ?? "" : sets.p2[i] ?? "";
-      if (i === finished) return side === "p1" ? games.p1 ?? "" : games.p2 ?? "";
+      if (i === finished) return side === "p1" ? (games.p1 ?? "") : (games.p2 ?? "");
       return "";
     });
-
     const points = s.tiebreak ? `TB ${s.tb[side]}` : s.points[side];
 
     return (
-      <div className="row">
-        <div className="teamline">{line}</div>
-        <div className="serve">{s.server === side ? "🎾" : ""}</div>
-        <div className="grid" style={{ gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)` }}>
-          {setCells.map((v, i) => (<div key={i} className="box">{v}</div>))}
-          <div className="box">{String(points)}</div>
+      <div className="jc-row">
+        <div className="jc-teamline">{line}</div>
+        <div className="jc-serve">{s.server === side ? "🎾" : ""}</div>
+        <div className="jc-grid" style={{ gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)` }}>
+          {setCells.map((v, i) => <div key={i} className="jc-box">{v}</div>)}
+          <div className="jc-box">{String(points)}</div>
         </div>
       </div>
     );
-  }
+  };
 
   return (
-    <div className="wrap">
+    <div className="jc-wrap">
       <style>{`
         :root{ --ink:#212A31; --ink2:#0B1B2B; --primary:#124E66; --muted:#748D92; --cloud:#D3D9D4; }
-        .wrap{ background:var(--ink); min-height:100vh; padding:18px 2vw; }
-        .container{ margin:0 auto; width:min(1100px,92vw); }
-        .card{ background:var(--ink2); color:#fff; border:1px solid rgba(0,0,0,.15); border-radius:16px; padding:1.25rem; box-shadow:0 6px 20px rgba(0,0,0,.25); }
+        .jc-wrap{ background:var(--ink); min-height:100vh; padding:18px 2vw; color:#fff; }
+        .jc-card{ background:var(--ink2); color:#fff; border:1px solid rgba(0,0,0,.15); border-radius:16px; padding:1.25rem; box-shadow:0 6px 20px rgba(0,0,0,.25); width:min(1100px,92vw); margin:0 auto; }
 
-        /* >>> identical to Live spacing <<< */
-        .rows{ display:grid; gap:.9rem; margin: 6px 0 10px; }
-        .row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.28em; }
-        .teamline{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .serve{ text-align:center; }
-        .grid{ display:grid; gap:.6rem; }
-        .box{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.4em; display:flex; align-items:center; justify-content:center; font-weight:800; }
-        /* ------------------------------- */
+        .jc-head{ display:flex; justify-content:space-between; align-items:flex-end; gap:1rem; margin-bottom:10px; }
+        .jc-title{ color:var(--cloud); font-size:1.4em; font-weight:800; }
+        .jc-select{ width:12em; border-radius:9999px; height:2.6em; background:var(--cloud); color:#0b1419; border:1px solid var(--muted); padding:0 .9em; }
 
-        .head{ display:flex; justify-content:space-between; align-items:flex-end; gap:1rem; margin-bottom:10px; }
-        .title{ color:var(--cloud); font-size:1.4em; font-weight:800; }
-        .select{ width:12em; border-radius:9999px; height:2.6em; background:var(--cloud); color:#0b1419; border:1px solid var(--muted); padding:0 .9em; }
+        /* rows (identical spacing to Live) */
+        .jc-row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.28em; margin:10px 0; }
+        .jc-teamline{ color:var(--cloud); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+        .jc-serve{ text-align:center; }
+        .jc-grid{ display:grid; gap:.6rem; }
+        .jc-box{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.4em; display:flex; align-items:center; justify-content:center; font-weight:800; }
 
-        .panelGrid{ display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap:1rem; }
-        .panel{ background:rgba(33,42,49,.45); border:1px solid rgba(211,217,212,.12); border-radius:12px; padding:1rem; }
-        .input{ width:100%; background:#D3D9D4; color:#0b1419; border:1px solid var(--muted); border-radius:10px; height:2.6em; padding:0 .9em; }
-        .btn{ border:1px solid transparent; background:var(--primary); color:#fff; border-radius:12px; height:2.8em; padding:0 1.1em; font-weight:700; font-size:1em; }
+        /* control panels */
+        .jc-panels{ display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap:1rem; }
+        @media (max-width: 980px){ .jc-panels{ grid-template-columns: 1fr; } }
+        .jc-panel{ background:rgba(33,42,49,.45); border:1px solid rgba(211,217,212,.12); border-radius:12px; padding:1rem; }
+        .jc-g2{ display:grid; grid-template-columns: 1fr 1fr; gap:.75rem; }
+
+        .jc-input{ width:100%; background:#D3D9D4; color:#0b1419; border:1px solid var(--muted); border-radius:10px; height:2.6em; padding:0 .9em; }
+        .jc-btnRow{ display:grid; grid-template-columns: 1fr 1fr; gap:.75rem; margin-top:.5rem; }
+        .jc-btn{ border:1px solid transparent; background:var(--primary); color:#fff; border-radius:12px; height:3.2em; font-weight:800; font-size:1.9rem; }
+
+        .jc-footer{ display:flex; gap:.75rem; flex-wrap:wrap; justify-content:center; margin-top:1rem; }
+        .jc-btnSm{ height:2.8em; font-size:1rem; padding:0 1.1em; border-radius:12px; border:1px solid transparent; background:var(--primary); color:#fff; font-weight:700; }
+        .jc-danger{ background:#8b2e2e; }
+        .jc-gold{ background:#748D92; color:#0b1419; }
       `}</style>
 
-      <div className="container">
-        <div className="card">
-          <div className="head">
-            <div className="title">{externalCourtName || "Court"}</div>
-            <select
-              className="select"
-              value={s.meta?.bestOf ?? 3}
-              onChange={(e) => updateBestOf(Number(e.target.value) as BestOf)}
-            >
-              <option value={3}>Best of 3</option>
-              <option value={5}>Best of 5</option>
-            </select>
-          </div>
+      <div className="jc-card">
+        <div className="jc-head">
+          <div className="jc-title">{courtName || "Centre Court"}</div>
+          <select className="jc-select" value={s.meta?.bestOf ?? 3} onChange={(e)=>updateBestOf(Number(e.target.value) as BestOf)}>
+            <option value={3}>Best of 3</option>
+            <option value={5}>Best of 5</option>
+          </select>
+        </div>
 
-          {/* the two scoreboard rows with live-like spacing */}
-          <div className="rows">
-            <Row side="p1" />
-            <Row side="p2" />
-          </div>
+        {/* Score rows */}
+        <div>
+          <Row side="p1" />
+          <Row side="p2" />
+        </div>
 
-          <hr style={{ border: "none", height: 1, background: "rgba(211,217,212,.18)", margin: "0.75rem 0 1rem" }} />
+        <hr style={{ border: "none", height: 1, background: "rgba(211,217,212,.18)", margin: "12px 0" }} />
 
-          {/* team panels (unchanged) */}
-          <div className="panelGrid">
-            {/* Team 1 */}
-            <div className="panel">
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
-                <div>
-                  <label>Player 1</label>
-                  <input className="input" placeholder="Enter Name"
-                    value={s.players["1a"].name}
-                    onChange={(e) => updatePlayer("1a", "name", e.target.value)} />
-                  <select className="input" value={s.players["1a"].cc}
-                    onChange={(e) => updatePlayer("1a", "cc", e.target.value)}>
-                    {["🇲🇾","🇸🇬","🇹🇭","🇮🇩","🇵🇭","🇻🇳","🇯🇵","🇰🇷","🇨🇳","🇺🇸"].map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label>Player 2</label>
-                  <input className="input" placeholder="Enter Name"
-                    value={s.players["1b"].name}
-                    onChange={(e) => updatePlayer("1b", "name", e.target.value)} />
-                  <select className="input" value={s.players["1b"].cc}
-                    onChange={(e) => updatePlayer("1b", "cc", e.target.value)}>
-                    {["🇲🇾","🇸🇬","🇹🇭","🇮🇩","🇵🇭","🇻🇳","🇯🇵","🇰🇷","🇨🇳","🇺🇸"].map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
+        {/* Panels (ALWAYS rendered) */}
+        <div className="jc-panels">
+          {/* Team 1 */}
+          <div className="jc-panel">
+            <div className="jc-g2">
+              <div>
+                <input className="jc-input" placeholder="Player 1" value={s.players["1a"].name} onChange={(e)=>updatePlayer("1a","name",e.target.value)} />
+                <select className="jc-input" style={{marginTop:".5rem"}} value={s.players["1a"].cc} onChange={(e)=>updatePlayer("1a","cc",e.target.value)}>
+                  {COUNTRIES.map(([f,n]) => <option key={f+n} value={f}>{f} {n}</option>)}
+                </select>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: ".75rem", marginTop: ".75rem" }}>
-                <button className="btn" style={{ height: "4.5rem", fontSize: "2.3em" }} onClick={() => addPoint("p1", +1)}>+</button>
-                <button className="btn" style={{ height: "4.5rem", fontSize: "2.3em" }} onClick={() => addPoint("p1", -1)}>−</button>
+              <div>
+                <input className="jc-input" placeholder="Player 2" value={s.players["1b"].name} onChange={(e)=>updatePlayer("1b","name",e.target.value)} />
+                <select className="jc-input" style={{marginTop:".5rem"}} value={s.players["1b"].cc} onChange={(e)=>updatePlayer("1b","cc",e.target.value)}>
+                  {COUNTRIES.map(([f,n]) => <option key={f+n} value={f}>{f} {n}</option>)}
+                </select>
               </div>
             </div>
-
-            {/* Team 2 */}
-            <div className="panel">
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
-                <div>
-                  <label>Player 3</label>
-                  <input className="input" placeholder="Enter Name"
-                    value={s.players["2a"].name}
-                    onChange={(e) => updatePlayer("2a", "name", e.target.value)} />
-                  <select className="input" value={s.players["2a"].cc}
-                    onChange={(e) => updatePlayer("2a", "cc", e.target.value)}>
-                    {["🇲🇾","🇸🇬","🇹🇭","🇮🇩","🇵🇭","🇻🇳","🇯🇵","🇰🇷","🇨🇳","🇺🇸"].map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label>Player 4</label>
-                  <input className="input" placeholder="Enter Name"
-                    value={s.players["2b"].name}
-                    onChange={(e) => updatePlayer("2b", "name", e.target.value)} />
-                  <select className="input" value={s.players["2b"].cc}
-                    onChange={(e) => updatePlayer("2b", "cc", e.target.value)}>
-                    {["🇲🇾","🇸🇬","🇹🇭","🇮🇩","🇵🇭","🇻🇳","🇯🇵","🇰🇷","🇨🇳","🇺🇸"].map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: ".75rem", marginTop: ".75rem" }}>
-                <button className="btn" style={{ height: "4.5rem", fontSize: "2.3em" }} onClick={() => addPoint("p2", +1)}>+</button>
-                <button className="btn" style={{ height: "4.5rem", fontSize: "2.3em" }} onClick={() => addPoint("p2", -1)}>−</button>
-              </div>
+            <div className="jc-btnRow">
+              <button className="jc-btn" onClick={()=>addPoint("p1", +1)}>+</button>
+              <button className="jc-btn" onClick={()=>addPoint("p1", -1)}>−</button>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: ".75rem", justifyContent: "center", marginTop: "1rem", flexWrap: "wrap" }}>
-            <button className="btn" style={{ background: "#8b2e2e" }} onClick={resetGame}>Reset Game</button>
-            <button className="btn" style={{ background: "#748D92", color: "#0b1419" }} onClick={newMatch}>New Match</button>
-            <button className="btn" onClick={toggleServer} title="Toggle server">Serve🎾</button>
+          {/* Team 2 */}
+          <div className="jc-panel">
+            <div className="jc-g2">
+              <div>
+                <input className="jc-input" placeholder="Player 3" value={s.players["2a"].name} onChange={(e)=>updatePlayer("2a","name",e.target.value)} />
+                <select className="jc-input" style={{marginTop:".5rem"}} value={s.players["2a"].cc} onChange={(e)=>updatePlayer("2a","cc",e.target.value)}>
+                  {COUNTRIES.map(([f,n]) => <option key={f+n} value={f}>{f} {n}</option>)}
+                </select>
+              </div>
+              <div>
+                <input className="jc-input" placeholder="Player 4" value={s.players["2b"].name} onChange={(e)=>updatePlayer("2b","name",e.target.value)} />
+                <select className="jc-input" style={{marginTop:".5rem"}} value={s.players["2b"].cc} onChange={(e)=>updatePlayer("2b","cc",e.target.value)}>
+                  {COUNTRIES.map(([f,n]) => <option key={f+n} value={f}>{f} {n}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="jc-btnRow">
+              <button className="jc-btn" onClick={()=>addPoint("p2", +1)}>+</button>
+              <button className="jc-btn" onClick={()=>addPoint("p2", -1)}>−</button>
+            </div>
           </div>
+        </div>
+
+        {/* Footer */}
+        <div className="jc-footer">
+          <button className="jc-btnSm jc-danger" onClick={resetGame}>Reset Game</button>
+          <button className="jc-btnSm jc-gold" onClick={newMatch}>New Match</button>
+          <button className="jc-btnSm" onClick={toggleServer}>Serve🎾</button>
         </div>
       </div>
     </div>
