@@ -1,19 +1,16 @@
-// 🔵 Export live/court1..court5
-export async function generateStaticParams() {
-  return ["court1", "court2", "court3", "court4", "court5"].map((courtId) => ({ courtId }));
-}
-export const dynamic = "force-static";
-
 "use client";
+export const dynamic = "force-static";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue } from "firebase/database";
 
+/** ---------- Types ---------- */
 type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
 type BestOf = 3 | 5;
+
 type Player = { name: string; cc: string };
 type ScoreState = {
   meta: { name: string; bestOf: BestOf };
@@ -27,12 +24,19 @@ type ScoreState = {
   ts?: number;
 };
 
+/** ---------- Helpers ---------- */
 const flag = (cc: string) => cc || "🏳️";
-const nameOrLabel = (n: string, fb: string) => (n?.trim() ? n : fb);
+const nameOrLabel = (n: string, fallback: string) => (n?.trim() ? n : fallback);
 
+/** ---------- Defaults ---------- */
 const defaultState: ScoreState = {
   meta: { name: "", bestOf: 3 },
-  players: { "1a": { name: "", cc: "🇲🇾" }, "1b": { name: "", cc: "🇲🇾" }, "2a": { name: "", cc: "🇲🇾" }, "2b": { name: "", cc: "🇲🇾" } },
+  players: {
+    "1a": { name: "", cc: "🇲🇾" },
+    "1b": { name: "", cc: "🇲🇾" },
+    "2a": { name: "", cc: "🇲🇾" },
+    "2b": { name: "", cc: "🇲🇾" },
+  },
   points: { p1: 0, p2: 0 },
   games: { p1: 0, p2: 0 },
   sets: { p1: [], p2: [] },
@@ -51,6 +55,10 @@ function normalize(v: any): ScoreState {
   };
 }
 
+/** =========================================================
+ *  Live (multi-court)
+ *  =========================================================
+ */
 export default function LivePage() {
   const params = useParams<{ courtId: string }>();
   const courtId = params?.courtId || "court1";
@@ -73,20 +81,27 @@ export default function LivePage() {
   const maxSets = useMemo(() => ((s?.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s?.meta?.bestOf]);
 
   const Row = ({ side }: { side: Side }) => {
-    const sets = s.sets, games = s.games, players = s.players;
+    const players = s.players;
+    const sets = s.sets;
+    const games = s.games;
+
     const p1a = nameOrLabel(players["1a"].name, "Player 1");
     const p1b = nameOrLabel(players["1b"].name, "Player 2");
     const p2a = nameOrLabel(players["2a"].name, "Player 3");
     const p2b = nameOrLabel(players["2b"].name, "Player 4");
-    const line = side === "p1"
-      ? `${flag(players["1a"].cc)} ${p1a} / ${flag(players["1b"].cc)} ${p1b}`
-      : `${flag(players["2a"].cc)} ${p2a} / ${flag(players["2b"].cc)} ${p2b}`;
+
+    const line =
+      side === "p1"
+        ? `${flag(players["1a"].cc)} ${p1a} / ${flag(players["1b"].cc)} ${p1b}`
+        : `${flag(players["2a"].cc)} ${p2a} / ${flag(players["2b"].cc)} ${p2b}`;
+
     const finished = Math.max(sets.p1.length, sets.p2.length);
     const setCells = Array.from({ length: maxSets }).map((_, i) => {
       if (i < finished) return side === "p1" ? sets.p1[i] ?? "" : sets.p2[i] ?? "";
       if (i === finished) return side === "p1" ? games.p1 ?? "" : games.p2 ?? "";
       return "";
     });
+
     const points = s.tiebreak ? `TB ${s.tb[side]}` : s.points[side];
 
     return (
@@ -94,7 +109,9 @@ export default function LivePage() {
         <div className="teamline">{line}</div>
         <div className="serve">{s.server === side ? "🎾" : ""}</div>
         <div className="grid" style={{ gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)` }}>
-          {setCells.map((v, i) => <div key={i} className="box">{v}</div>)}
+          {setCells.map((v, i) => (
+            <div key={i} className="box">{v}</div>
+          ))}
           <div className="box">{String(points)}</div>
         </div>
       </div>
