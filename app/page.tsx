@@ -4,156 +4,64 @@ import { useEffect, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue, set } from "firebase/database";
 
-const COURT_PATH = "/courts/court1/meta/name";
-
 export default function IndexPage() {
+  const path = "courts/court1";
   const [courtName, setCourtName] = useState("Centre Court");
 
   useEffect(() => {
-    let unsub = () => {};
-    (async () => {
-      try { await ensureAnonLogin(); } catch {}
-      unsub = onValue(ref(db, COURT_PATH), (snap) => {
-        const v = snap.val();
-        if (typeof v === "string") setCourtName(v);
-      });
-    })();
-    return () => unsub();
+    ensureAnonLogin();
+    const courtRef = ref(db, `${path}/meta/name`);
+    return onValue(courtRef, (snap) => {
+      if (snap.exists()) setCourtName(snap.val());
+    });
   }, []);
 
-  const save = async () => {
-    await set(ref(db, COURT_PATH), courtName);
-  };
-
-  const reset = async () => {
-    setCourtName("Centre Court");
-    await set(ref(db, COURT_PATH), "Centre Court");
-  };
+  const saveName = () => set(ref(db, `${path}/meta/name`), courtName);
+  const resetName = () => setCourtName("Centre Court");
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#121a21",
-        color: "#e9edf3",
-        display: "grid",
-        placeItems: "center",
-        padding: "6vh 4vw",
-      }}
-    >
-      <section
-        style={{
-          width: "min(900px,95vw)",
-          background: "#0E1B24",
-          border: "1px solid rgba(255,255,255,.06)",
-          borderRadius: 18,
-          boxShadow: "0 18px 60px rgba(0,0,0,.35)",
-          padding: "28px 28px 24px",
-        }}
-      >
-        <div
-          style={{
-            textAlign: "center",
-            fontWeight: 900,
-            letterSpacing: 1,
-            marginBottom: 14,
-            fontSize: "clamp(26px,3vw,36px)",
-          }}
-        >
+    <main className="min-h-screen bg-[#121a21] text-[#e9edf3] grid place-items-center p-8">
+      <section className="w-[min(900px,95vw)] bg-[#0E1B24] border border-white/10 rounded-2xl shadow-2xl p-8">
+        <h1 className="text-center font-extrabold tracking-wide mb-6 text-3xl">
           {courtName.toUpperCase()}
-        </div>
-
-        <hr style={{ border: "none", height: 1, background: "rgba(255,255,255,.12)", margin: "0 0 18px" }} />
-
-        <label style={{ display: "block", opacity: 0.8, marginBottom: 8 }}>Court name</label>
+        </h1>
+        <label className="block opacity-80 mb-2">Court name</label>
         <input
-          placeholder="Centre Court"
           value={courtName}
           onChange={(e) => setCourtName(e.target.value)}
-          style={{
-            width: "100%",
-            height: 48,
-            borderRadius: 12,
-            border: "1px solid #2a323a",
-            background: "#13202A",
-            color: "#E6EDF3",
-            padding: "0 14px",
-            fontSize: 18,
-          }}
+          placeholder="Court name"
+          className="w-full h-12 rounded-xl border border-[#2a323a] bg-[#13202A] px-4 text-lg"
         />
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, margin: "16px 0 12px" }}>
+        <div className="grid grid-cols-2 gap-4 my-4">
           <button
-            onClick={save}
-            style={{
-              height: 52,
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,.06)",
-              background: "linear-gradient(180deg,#0D6078,#0C4F67)",
-              color: "#fff",
-              fontWeight: 800,
-              fontSize: 18,
-            }}
+            onClick={saveName}
+            className="h-12 rounded-xl bg-gradient-to-b from-[#0D6078] to-[#0C4F67] font-bold"
           >
             Save
           </button>
           <button
-            onClick={reset}
-            style={{
-              height: 52,
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,.06)",
-              background: "linear-gradient(180deg,#274956,#203946)",
-              color: "#fff",
-              fontWeight: 800,
-              fontSize: 18,
-            }}
+            onClick={resetName}
+            className="h-12 rounded-xl bg-gradient-to-b from-[#274956] to-[#203946] font-bold"
           >
             Reset
           </button>
         </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div className="grid grid-cols-2 gap-4">
           <a
             href="/controller"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              height: 52,
-              borderRadius: 14,
-              background: "#2A5B6C",
-              color: "#fff",
-              fontWeight: 800,
-              fontSize: 18,
-              textDecoration: "none",
-              border: "1px solid rgba(255,255,255,.08)",
-            }}
+            className="h-12 flex items-center justify-center rounded-xl bg-[#2A5B6C] font-bold"
           >
             Controller
           </a>
           <a
             href="/live"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              height: 52,
-              borderRadius: 14,
-              background: "#6C8086",
-              color: "#0b1419",
-              fontWeight: 800,
-              fontSize: 18,
-              textDecoration: "none",
-              border: "1px solid rgba(255,255,255,.08)",
-            }}
+            className="h-12 flex items-center justify-center rounded-xl bg-[#6C8086] text-black font-bold"
           >
             Live
           </a>
         </div>
-
-        <div style={{ opacity: 0.6, fontSize: 12, marginTop: 16 }}>
-          RTDB path: <code>/courts/court1</code>
+        <div className="opacity-60 text-xs mt-4">
+          RTDB path: <code>/{path}</code>
         </div>
       </section>
     </main>
