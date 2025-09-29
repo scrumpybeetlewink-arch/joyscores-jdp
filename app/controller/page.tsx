@@ -1,1 +1,77 @@
+"use client";
 
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { db, ensureAnonLogin } from "@/lib/firebase.client";
+import { ref, onValue, set } from "firebase/database";
+
+type Side = "p1" | "p2";
+type Point = 0 | 15 | 30 | 40 | "Ad";
+
+type Player = { name: string; cc: string };
+type ScoreState = {
+  meta: { name: string; bestOf: 3 | 5 };
+  players: { "1a": Player; "1b": Player; "2a": Player; "2b": Player };
+  points: Record<Side, Point>;
+  games: Record<Side, number>;
+  sets: { p1: number[]; p2: number[] };
+  server: Side;
+};
+
+const defaultState: ScoreState = {
+  meta: { name: "", bestOf: 3 },
+  players: {
+    "1a": { name: "", cc: "🏳️" },
+    "1b": { name: "", cc: "🏳️" },
+    "2a": { name: "", cc: "🏳️" },
+    "2b": { name: "", cc: "🏳️" },
+  },
+  points: { p1: 0, p2: 0 },
+  games: { p1: 0, p2: 0 },
+  sets: { p1: [], p2: [] },
+  server: "p1",
+};
+
+export default function ControllerPage() {
+  const searchParams = useSearchParams();
+  const court = searchParams.get("court") ?? "court1";
+  const path = `/courts/${court}`;
+  const [s, setS] = useState<ScoreState>(defaultState);
+
+  useEffect(() => {
+    let unsub = () => {};
+    (async () => {
+      try {
+        await ensureAnonLogin();
+      } catch {}
+      unsub = onValue(ref(db, path), (snap) =>
+        setS(snap.val() ?? defaultState)
+      );
+    })();
+    return () => unsub();
+  }, [path]);
+
+  async function commit(next: ScoreState) {
+    await set(ref(db, path), next);
+  }
+
+  return (
+    <main style={{ minHeight: "100vh", background: "#212A31", color: "#fff", padding: 20 }}>
+      <h1 style={{ fontSize: "1.5em", marginBottom: 20 }}>
+        Controller – {court}
+      </h1>
+      <button
+        onClick={() => commit(defaultState)}
+        style={{
+          padding: 12,
+          borderRadius: 8,
+          background: "#2A5B6C",
+          color: "#fff",
+          fontWeight: 700,
+        }}
+      >
+        Reset Match
+      </button>
+    </main>
+  );
+}
