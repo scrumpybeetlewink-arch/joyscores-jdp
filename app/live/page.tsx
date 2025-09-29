@@ -1,12 +1,19 @@
-// app/live/page.tsx
 "use client";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 
-export const dynamic = "force-static";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import ScoreboardLive from "./ui";
 
-export default function LiveIndexRedirect() {
-  const r = useRouter();
-  useEffect(() => { r.replace("/live/court1"); }, [r]);
-  return null;
+export default function LivePage() {
+  return (
+    <Suspense fallback={null}>
+      <LiveInner />
+    </Suspense>
+  );
+}
+
+function LiveInner() {
+  const sp = useSearchParams();
+  const courtId = sp.get("court") || "court1";
+  return <ScoreboardLive courtId={courtId} />;
 }
