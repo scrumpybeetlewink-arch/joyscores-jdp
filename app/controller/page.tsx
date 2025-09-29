@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue, set } from "firebase/database";
 
@@ -20,10 +21,6 @@ type ScoreState = {
   server: Side | null;
   ts?: number;
 };
-
-/** ---------- Firebase paths (single court; MUST match Index/Live) ---------- */
-const COURT_PATH = "/courts/court1";
-const META_NAME_PATH = "/courts/court1/meta/name";
 
 /** ---------- UI helpers ---------- */
 const COUNTRIES: Array<[flag: string, name: string]> = [
@@ -58,7 +55,6 @@ const defaultState: ScoreState = {
   ts: undefined,
 };
 
-/** ---------- Normalize any RTDB snapshot ---------- */
 function normalize(v: any): ScoreState {
   if (!v) return defaultState;
   return {
@@ -88,14 +84,20 @@ function normalize(v: any): ScoreState {
 }
 
 /** =========================================================
- *  Controller (approved UI restored, spacing = Live, full controls)
+ *  Controller — per-court (isolated by courtId)
  *  =========================================================
  */
 export default function ControllerPage() {
+  const params = useParams<{ courtId: string }>();
+  const courtId = String(params?.courtId || "court1");
+
+  const COURT_PATH = `/courts/${courtId}`;
+  const META_NAME_PATH = `/courts/${courtId}/meta/name`;
+
   const [s, setS] = useState<ScoreState>(defaultState);
   const [courtName, setCourtName] = useState<string>(defaultState.meta.name);
 
-  // Subscribe to score + name
+  // subscribe
   useEffect(() => {
     let off1 = () => {};
     let off2 = () => {};
@@ -108,24 +110,22 @@ export default function ControllerPage() {
       });
     })();
     return () => { off1?.(); off2?.(); };
-  }, []);
+  }, [COURT_PATH, META_NAME_PATH]);
 
-  // Commit helpers
+  // commit helpers
   const commit = async (next: ScoreState) => {
     next.ts = Date.now();
     await set(ref(db, COURT_PATH), next);
   };
   const clone = () => JSON.parse(JSON.stringify(s)) as ScoreState;
-
   const maxSets = useMemo(() => ((s.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s.meta?.bestOf]);
 
-  // Scoring logic
+  // scoring
   function winGame(n: ScoreState, side: Side) {
     n.games[side] += 1;
     n.points = { p1: 0, p2: 0 };
     const a = n.games.p1, b = n.games.p2;
     const lead = Math.abs(a - b);
-
     if ((a >= 6 || b >= 6) && lead >= 2) {
       n.sets.p1.push(a); n.sets.p2.push(b);
       n.games = { p1: 0, p2: 0 };
@@ -186,9 +186,8 @@ export default function ControllerPage() {
       server: "p1",
       ts: Date.now(),
     };
-    // Write full node AND leaf name (prevents name listener drift)
     await set(ref(db, COURT_PATH), next);
-    await set(ref(db, META_NAME_PATH), courtName || "");
+    await set(ref(db, META_NAME_PATH), courtName || ""); // keep leaf listener happy
   }
 
   async function updatePlayer(k: "1a"|"1b"|"2a"|"2b", f: "name"|"cc", v: string) {
@@ -196,7 +195,7 @@ export default function ControllerPage() {
   }
   async function updateBestOf(v: BestOf) { const n = clone(); n.meta.bestOf = v; await commit(n); }
 
-  /** ---------- Row (spacing identical to Live) ---------- */
+  /** ---------- Row (spacing matches Live) ---------- */
   const Row = ({ side }: { side: Side }) => {
     const players = s.players, sets = s.sets, games = s.games;
     const p1a = nameOr(players["1a"].name, "Player 1");
@@ -240,14 +239,12 @@ export default function ControllerPage() {
         .jc-title{ color:var(--cloud); font-size:1.4em; font-weight:800; }
         .jc-select{ width:12em; border-radius:9999px; height:2.6em; background:var(--cloud); color:#0b1419; border:1px solid var(--muted); padding:0 .9em; }
 
-        /* rows (identical spacing to Live) */
         .jc-row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.28em; margin:10px 0; }
         .jc-teamline{ color:var(--cloud); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
         .jc-serve{ text-align:center; }
         .jc-grid{ display:grid; gap:.6rem; }
         .jc-box{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.4em; display:flex; align-items:center; justify-content:center; font-weight:800; }
 
-        /* control panels */
         .jc-panels{ display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap:1rem; }
         @media (max-width: 980px){ .jc-panels{ grid-template-columns: 1fr; } }
         .jc-panel{ background:rgba(33,42,49,.45); border:1px solid rgba(211,217,212,.12); border-radius:12px; padding:1rem; }
@@ -265,14 +262,13 @@ export default function ControllerPage() {
 
       <div className="jc-card">
         <div className="jc-head">
-          <div className="jc-title">{courtName || "Centre Court"}</div>
+          <div className="jc-title">{courtName || "Court"}</div>
           <select className="jc-select" value={s.meta?.bestOf ?? 3} onChange={(e)=>updateBestOf(Number(e.target.value) as BestOf)}>
             <option value={3}>Best of 3</option>
             <option value={5}>Best of 5</option>
           </select>
         </div>
 
-        {/* Score rows */}
         <div>
           <Row side="p1" />
           <Row side="p2" />
@@ -280,7 +276,6 @@ export default function ControllerPage() {
 
         <hr style={{ border: "none", height: 1, background: "rgba(211,217,212,.18)", margin: "12px 0" }} />
 
-        {/* Panels (ALWAYS rendered) */}
         <div className="jc-panels">
           {/* Team 1 */}
           <div className="jc-panel">
@@ -327,7 +322,6 @@ export default function ControllerPage() {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="jc-footer">
           <button className="jc-btnSm jc-danger" onClick={resetGame}>Reset Game</button>
           <button className="jc-btnSm jc-gold" onClick={newMatch}>New Match</button>
