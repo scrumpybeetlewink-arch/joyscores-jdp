@@ -1,16 +1,35 @@
 "use client";
 
-import Link from "next/link";
+import { useEffect, useState } from "react";
+import { db, ensureAnonLogin } from "@/lib/firebase.client";
+import { ref, onValue, set } from "firebase/database";
 
-const courts = [
-  { id: "court1", label: "Court 1" },
-  { id: "court2", label: "Court 2" },
-  { id: "court3", label: "Court 3" },
-  { id: "court4", label: "Court 4" },
-  { id: "court5", label: "Court 5" },
-];
+const COURT_PATH = "/courts/court1/meta/name";
 
 export default function IndexPage() {
+  const [courtName, setCourtName] = useState("Centre Court");
+
+  useEffect(() => {
+    let unsub = () => {};
+    (async () => {
+      try { await ensureAnonLogin(); } catch {}
+      unsub = onValue(ref(db, COURT_PATH), (snap) => {
+        const v = snap.val();
+        if (typeof v === "string") setCourtName(v);
+      });
+    })();
+    return () => unsub();
+  }, []);
+
+  const save = async () => {
+    await set(ref(db, COURT_PATH), courtName);
+  };
+
+  const reset = async () => {
+    setCourtName("Centre Court");
+    await set(ref(db, COURT_PATH), "Centre Court");
+  };
+
   return (
     <main
       style={{
@@ -32,84 +51,109 @@ export default function IndexPage() {
           padding: "28px 28px 24px",
         }}
       >
-        <h1
+        <div
           style={{
             textAlign: "center",
             fontWeight: 900,
             letterSpacing: 1,
-            marginBottom: 18,
+            marginBottom: 14,
             fontSize: "clamp(26px,3vw,36px)",
           }}
         >
-          JoyScores — Courts
-        </h1>
-        <div
+          {courtName.toUpperCase()}
+        </div>
+
+        <hr style={{ border: "none", height: 1, background: "rgba(255,255,255,.12)", margin: "0 0 18px" }} />
+
+        <label style={{ display: "block", opacity: 0.8, marginBottom: 8 }}>Court name</label>
+        <input
+          placeholder="Centre Court"
+          value={courtName}
+          onChange={(e) => setCourtName(e.target.value)}
           style={{
-            display: "grid",
-            gridTemplateColumns: "1fr",
-            gap: 16,
+            width: "100%",
+            height: 48,
+            borderRadius: 12,
+            border: "1px solid #2a323a",
+            background: "#13202A",
+            color: "#E6EDF3",
+            padding: "0 14px",
+            fontSize: 18,
           }}
-        >
-          {courts.map((c) => (
-            <div
-              key={c.id}
-              style={{
-                background: "#13202A",
-                borderRadius: 12,
-                padding: 16,
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-              }}
-            >
-              <div
-                style={{
-                  fontWeight: 700,
-                  fontSize: 20,
-                  marginBottom: 4,
-                }}
-              >
-                {c.label}
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 12,
-                }}
-              >
-                <Link
-                  href={`/controller?court=${c.id}`}
-                  style={{
-                    flex: 1,
-                    textAlign: "center",
-                    background: "#2A5B6C",
-                    borderRadius: 10,
-                    padding: "12px 0",
-                    color: "#fff",
-                    textDecoration: "none",
-                    fontWeight: 700,
-                  }}
-                >
-                  Controller
-                </Link>
-                <Link
-                  href={`/live?court=${c.id}`}
-                  style={{
-                    flex: 1,
-                    textAlign: "center",
-                    background: "#6C8086",
-                    borderRadius: 10,
-                    padding: "12px 0",
-                    color: "#0b1419",
-                    textDecoration: "none",
-                    fontWeight: 700,
-                  }}
-                >
-                  Live
-                </Link>
-              </div>
-            </div>
-          ))}
+        />
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, margin: "16px 0 12px" }}>
+          <button
+            onClick={save}
+            style={{
+              height: 52,
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,.06)",
+              background: "linear-gradient(180deg,#0D6078,#0C4F67)",
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: 18,
+            }}
+          >
+            Save
+          </button>
+          <button
+            onClick={reset}
+            style={{
+              height: 52,
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,.06)",
+              background: "linear-gradient(180deg,#274956,#203946)",
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: 18,
+            }}
+          >
+            Reset
+          </button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <a
+            href="/controller"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: 52,
+              borderRadius: 14,
+              background: "#2A5B6C",
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: 18,
+              textDecoration: "none",
+              border: "1px solid rgba(255,255,255,.08)",
+            }}
+          >
+            Controller
+          </a>
+          <a
+            href="/live"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: 52,
+              borderRadius: 14,
+              background: "#6C8086",
+              color: "#0b1419",
+              fontWeight: 800,
+              fontSize: 18,
+              textDecoration: "none",
+              border: "1px solid rgba(255,255,255,.08)",
+            }}
+          >
+            Live
+          </a>
+        </div>
+
+        <div style={{ opacity: 0.6, fontSize: 12, marginTop: 16 }}>
+          RTDB path: <code>/courts/court1</code>
         </div>
       </section>
     </main>
