@@ -71,19 +71,16 @@ export default function ClientLive({ courtId }: { courtId: string }) {
   const maxSets = useMemo(() => ((s.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s.meta?.bestOf]);
 
   const Row = ({ side }: { side: Side }) => {
-    const p = s.players;
-    const sets = s.sets;
-    const games = s.games;
+    const p = s.players, sets = s.sets, games = s.games;
 
     const p1a = nameOrLabel(p["1a"].name, "Player 1");
     const p1b = nameOrLabel(p["1b"].name, "Player 2");
     const p2a = nameOrLabel(p["2a"].name, "Player 3");
     const p2b = nameOrLabel(p["2b"].name, "Player 4");
 
-    const line =
-      side === "p1"
-        ? `${flag(p["1a"].cc)} ${p1a} / ${flag(p["1b"].cc)} ${p1b}`
-        : `${flag(p["2a"].cc)} ${p2a} / ${flag(p["2b"].cc)} ${p2b}`;
+    const line = side === "p1"
+      ? `${flag(p["1a"].cc)} ${p1a} / ${flag(p["1b"].cc)} ${p1b}`
+      : `${flag(p["2a"].cc)} ${p2a} / ${flag(p["2b"].cc)} ${p2b}`;
 
     const finished = Math.max(sets.p1.length, sets.p2.length);
     const setCells = Array.from({ length: maxSets }).map((_, i) => {
