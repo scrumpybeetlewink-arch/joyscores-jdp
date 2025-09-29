@@ -11,6 +11,7 @@ permissions:
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,7 +28,6 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      # env needed by your Next client code
       - name: Create .env.local from repo variables
         run: |
           cat > .env.local << 'EOF'
@@ -45,35 +45,23 @@ jobs:
       - name: Build (Next.js)
         run: pnpm build
 
-      # 🔎 Ensure Next exported everything we need before deploying
+      # ✅ Sanity check for single-court build
       - name: Sanity — exported routes
         run: |
           echo "---- out/ listing (html) ----"
-          find out -type f -name '*.html' | sed 's#^#out/#' | sort || true
-          
-          # helpers
-          for f in out/controller/index.html out/live/index.html; do
-            if [[ ! -f "$f" ]]; then
-              echo "::error ::missing $f"
-              exit 1
-            fi
-          done
+          find out -maxdepth 2 -type f -name '*.html' | sed 's#^#out/#' | sort || true
 
-          # the 10 court pages: controller & live x court1..court5
-          FAIL=0
-          for app in controller live; do
-            for court in court1 court2 court3 court4 court5; do
-              f="out/${app}/${court}/index.html"
-              if [[ -f "$f" ]]; then
-                echo "OK: $f"
-              else
-                echo "::error ::missing $f"
-                FAIL=1
-              fi
-            done
-          done
+          if [[ -f out/controller/index.html ]]; then
+            echo "OK: controller exported"
+          else
+            echo "::error ::controller route not exported"
+            exit 1
+          fi
 
-          if [[ $FAIL -ne 0 ]]; then
+          if [[ -f out/live/index.html ]]; then
+            echo "OK: live exported"
+          else
+            echo "::error ::live route not exported"
             exit 1
           fi
 
