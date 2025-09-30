@@ -1,17 +1,19 @@
 "use client";
+export const dynamic = "force-static";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue, set } from "firebase/database";
 
-/* ---------- Types ---------- */
+/** ---------- Types ---------- */
 type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
 type BestOf = 3 | 5;
 
 type Player = { name: string; cc: string };
 type ScoreState = {
-  meta: { name: string; bestOf: BestOf; golden?: boolean };
+  meta: { name: string; bestOf: BestOf };
   players: { "1a": Player; "1b": Player; "2a": Player; "2b": Player };
   points: Record<Side, Point>;
   games: Record<Side, number>;
@@ -19,15 +21,11 @@ type ScoreState = {
   tiebreak: boolean;
   tb: Record<Side, number>;
   server: Side | null;
+  golden?: boolean;        // golden point enabled?
   ts?: number;
 };
 
-/* ---------- Court selection (fixed single-court) ---------- */
-const court = "court1";
-const COURT_PATH = `/courts/${court}`;
-const META_NAME_PATH = `/courts/${court}/meta/name`;
-
-/* ---------- Constants ---------- */
+/** ---------- Countries ---------- */
 const COUNTRIES: Array<[flag: string, name: string]> = [
   ["🇲🇾","Malaysia"],["🇸🇬","Singapore"],["🇹🇭","Thailand"],["🇮🇩","Indonesia"],["🇵🇭","Philippines"],
   ["🇻🇳","Vietnam"],["🇮🇳","India"],["🇯🇵","Japan"],["🇰🇷","South Korea"],["🇨🇳","China"],
@@ -36,17 +34,17 @@ const COUNTRIES: Array<[flag: string, name: string]> = [
   ["🏳️","(None)"]
 ];
 
+/** ---------- Helpers ---------- */
 const flag = (cc: string) => cc || "🏳️";
-const nameOrLabel = (n: string, fallback: string) => (n?.trim() ? n : fallback);
-
 const nextPoint = (p: Point): Point =>
   p === 0 ? 15 : p === 15 ? 30 : p === 30 ? 40 : p === 40 ? "Ad" : "Ad";
 const prevPoint = (p: Point): Point =>
   p === 15 ? 0 : p === 30 ? 15 : p === 40 ? 30 : 40;
+const nameOrLabel = (n: string, fallback: string) => (n?.trim() ? n : fallback);
 
-/* ---------- Defaults ---------- */
+/** ---------- Defaults ---------- */
 const defaultState: ScoreState = {
-  meta: { name: "", bestOf: 3, golden: false },
+  meta: { name: "", bestOf: 3 },
   players: {
     "1a": { name: "", cc: "🇲🇾" },
     "1b": { name: "", cc: "🇲🇾" },
@@ -59,16 +57,15 @@ const defaultState: ScoreState = {
   tiebreak: false,
   tb: { p1: 0, p2: 0 },
   server: "p1",
+  golden: false,
   ts: undefined,
 };
 
-/* ---------- Normalize (RTDB → safe) ---------- */
 function normalize(v: any): ScoreState {
   const safe: ScoreState = {
     meta: {
-      name: v?.meta?.name ?? "",
+      name: (v?.meta?.name ?? ""),
       bestOf: (v?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
-      golden: !!v?.meta?.golden,
     },
     players: {
       "1a": { name: v?.players?.["1a"]?.name ?? "", cc: v?.players?.["1a"]?.cc ?? "🇲🇾" },
@@ -94,15 +91,30 @@ function normalize(v: any): ScoreState {
       p2: Number.isFinite(v?.tb?.p2) ? v.tb.p2 : 0,
     },
     server: v?.server === "p1" || v?.server === "p2" ? v.server : "p1",
+    golden: !!v?.golden,
     ts: typeof v?.ts === "number" ? v.ts : undefined,
   };
   return safe;
 }
 
-/* =========================================================
- * Controller
- * =======================================================*/
+/** =========================================================
+ *  Page wrapper (Suspense) so useSearchParams is compliant
+ *  =========================================================
+ */
 export default function ControllerPage() {
+  return (
+    <Suspense fallback={<main style={{padding:24,color:"#fff"}}>Loading…</main>}>
+      <ControllerInner />
+    </Suspense>
+  );
+}
+
+function ControllerInner() {
+  const params = useSearchParams();
+  const courtId = params.get("court") || "court1";
+  const COURT_PATH = `/courts/${courtId}`;
+  const META_NAME_PATH = `/courts/${courtId}/meta/name`;
+
   const [s, setS] = useState<ScoreState>(defaultState);
   const [externalCourtName, setExternalCourtName] = useState<string>("");
 
@@ -126,25 +138,17 @@ export default function ControllerPage() {
       });
     })();
 
-    return () => { unsubScore?.(); unsubName?.(); };
-  }, []);
+    return () => {
+      unsubScore?.();
+      unsubName?.();
+    };
+  }, [COURT_PATH, META_NAME_PATH]);
 
   async function commit(next: ScoreState) {
     next.ts = Date.now();
     await set(ref(db, COURT_PATH), next);
   }
   const clone = () => JSON.parse(JSON.stringify(s)) as ScoreState;
-
-  /* ---------- Scoring helpers ---------- */
-  function pushSetAndReset(n: ScoreState, winner: Side) {
-    const a = n.games.p1, b = n.games.p2;
-    if (winner === "p1") { n.sets.p1.push(a + 1); n.sets.p2.push(b); }
-    else { n.sets.p2.push(b + 1); n.sets.p1.push(a); }
-    n.games = { p1: 0, p2: 0 };
-    n.points = { p1: 0, p2: 0 };
-    n.tiebreak = false;
-    n.tb = { p1: 0, p2: 0 };
-  }
 
   function winGame(n: ScoreState, side: Side) {
     n.games[side] += 1;
@@ -164,32 +168,33 @@ export default function ControllerPage() {
   function addPoint(side: Side, dir: 1 | -1) {
     const n = clone();
 
-    // Tie-break handling
     if (n.tiebreak) {
-      if (dir === 1) n.tb[side] += 1;
-      else n.tb[side] = Math.max(0, n.tb[side] - 1);
+      n.tb[side] = Math.max(0, n.tb[side] + dir);
       const a = n.tb.p1, b = n.tb.p2;
-      if ((a >= 7 || b >= 7) && Math.abs(a - b) >= 2) pushSetAndReset(n, a > b ? "p1" : "p2");
+      if ((a >= 7 || b >= 7) && Math.abs(a - b) >= 2) {
+        if (a > b) { n.sets.p1.push(n.games.p1 + 1); n.sets.p2.push(n.games.p2); }
+        else { n.sets.p2.push(n.games.p2 + 1); n.sets.p1.push(n.games.p1); }
+        n.games = { p1: 0, p2: 0 };
+        n.points = { p1: 0, p2: 0 };
+        n.tiebreak = false; n.tb = { p1: 0, p2: 0 };
+      }
       return commit(n);
     }
 
-    // Golden Point at deuce (40–40)
-    const golden = !!n.meta.golden;
-    if (golden && dir === 1) {
-      const p1 = n.points.p1, p2 = n.points.p2;
-      if (p1 === 40 && p2 === 40) { winGame(n, side); return commit(n); }
-    }
-
-    // Normal advantage scoring
     if (dir === 1) {
       const opp: Side = side === "p1" ? "p2" : "p1";
       const ps = n.points[side], po = n.points[opp];
 
-      if (ps === 40 && (po === 0 || po === 15 || po === 30)) winGame(n, side);
-      else if (ps === 40 && po === "Ad") n.points[opp] = 40;
-      else if (ps === 40 && po === 40) n.points[side] = "Ad";
-      else if (ps === "Ad") winGame(n, side);
-      else n.points[side] = nextPoint(ps);
+      // Golden point logic (only when enabled)
+      if (n.golden && ps === 40 && po === 40) {
+        winGame(n, side);            // next won point at 40-40 wins game
+      } else {
+        if (ps === 40 && (po === 0 || po === 15 || po === 30)) winGame(n, side);
+        else if (ps === 40 && po === "Ad") n.points[opp] = 40;
+        else if (ps === 40 && po === 40) n.points[side] = "Ad";
+        else if (ps === "Ad") winGame(n, side);
+        else n.points[side] = nextPoint(ps);
+      }
     } else {
       n.points[side] = prevPoint(n.points[side]);
     }
@@ -202,20 +207,20 @@ export default function ControllerPage() {
     commit(n);
   }
 
-  function resetPoints() {
+  // Reset Game: remove exactly 1 game from the leader (request)
+  function resetGameOneStep() {
     const n = clone();
-    n.points = { p1: 0, p2: 0 };
-    n.tiebreak = false;
-    n.tb = { p1: 0, p2: 0 };
+    const { p1: g1, p2: g2 } = n.games;
+    if (g1 > g2) n.games.p1 = Math.max(0, g1 - 1);
+    else if (g2 > g1) n.games.p2 = Math.max(0, g2 - 1);
+    // points remain as-is per last decision; clear tiebreak if any
+    if (n.tiebreak) n.tiebreak = false, n.tb = { p1: 0, p2: 0 };
     commit(n);
   }
 
-  // Roll back exactly one game from the leading side
-  function resetLastGame() {
+  // Reset only points (not games/sets)
+  function resetPoints() {
     const n = clone();
-    const g1 = n.games.p1, g2 = n.games.p2;
-    if (g1 > g2) n.games.p1 = Math.max(0, g1 - 1);
-    else if (g2 > g1) n.games.p2 = Math.max(0, g2 - 1);
     n.points = { p1: 0, p2: 0 };
     n.tiebreak = false;
     n.tb = { p1: 0, p2: 0 };
@@ -225,7 +230,7 @@ export default function ControllerPage() {
   function newMatch() {
     commit({
       ...defaultState,
-      meta: { name: externalCourtName, bestOf: (s.meta?.bestOf ?? 3) as BestOf, golden: !!s.meta?.golden },
+      meta: { name: externalCourtName, bestOf: (s.meta?.bestOf ?? 3) as BestOf },
       players: {
         "1a": { name: "", cc: "🇲🇾" },
         "1b": { name: "", cc: "🇲🇾" },
@@ -239,7 +244,8 @@ export default function ControllerPage() {
 
   async function updatePlayer(key: "1a"|"1b"|"2a"|"2b", field: "name"|"cc", val: string) {
     const n = clone();
-    (n.players[key] as any)[field] = val;
+    const v = field === "name" ? val.slice(0, 30) : val;   // hard-limit to 30 chars
+    (n.players[key] as any)[field] = v;
     await commit(n);
   }
 
@@ -251,13 +257,13 @@ export default function ControllerPage() {
 
   async function toggleGolden() {
     const n = clone();
-    n.meta.golden = !n.meta.golden;
+    n.golden = !n.golden;
     await commit(n);
   }
 
   const maxSets = useMemo(() => ((s.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s.meta?.bestOf]);
 
-  /* ---------- Row ---------- */
+  /** ---------- Row Renderer ---------- */
   function renderRow(side: Side) {
     const players = s.players ?? defaultState.players;
     const sets = s.sets ?? defaultState.sets;
@@ -281,6 +287,19 @@ export default function ControllerPage() {
       return "";
     });
 
+    const scoreBoxStyle = {
+      fontSize: "1em",
+      background: "var(--c-muted)",
+      color: "#0b1419",
+      borderRadius: 12,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: "2.6em",
+      padding: "0.1em 0",
+      fontWeight: 800,
+    } as const;
+
     const pointsLabel = s.tiebreak ? `TB ${(s.tb ?? defaultState.tb)[side]}` : (s.points ?? defaultState.points)[side];
 
     return (
@@ -288,7 +307,7 @@ export default function ControllerPage() {
         className="row"
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 3rem minmax(0,1fr)",
+          gridTemplateColumns: "1fr 3.2em minmax(0,1fr)",
           gap: "1rem",
           alignItems: "center",
           fontSize: "1.35em",
@@ -312,266 +331,251 @@ export default function ControllerPage() {
           }}
         >
           {setCells.map((v, i) => (
-            <div key={i} className="setBox scoreBox">{v}</div>
+            <div key={i} className="setBox" style={scoreBoxStyle}>
+              {v}
+            </div>
           ))}
-          <div className="pointsBox scoreBox">{String(pointsLabel)}</div>
+          <div className="pointsBox" style={scoreBoxStyle}>{String(pointsLabel)}</div>
         </div>
       </div>
     );
   }
 
-  /* ---------- UI ---------- */
   return (
-    <div className="pageWrap" style={{ background: "var(--ink)", minHeight: "100vh", padding: "18px 2vw" }}>
+    <div className="pageWrap" style={{ background: "var(--c-ink)", minHeight: "100vh" }}>
       <style>{`
         :root{
-          --ink:#212A31;
-          --ink2:#0B1B2B;
-          --primary:#124E66;
-          --muted:#748D92;
-          --cloud:#D3D9D4;
-          --danger:#8b2e2e;
-          --gold:#f6c338;
+          --c-ink:#212A31;
+          --c-ink-2:#0B1B2B;   /* dark navy card */
+          --c-primary:#124E66; /* +/- and Best Of background */
+          --c-muted:#748D92;   /* set/point boxes */
+          --c-cloud:#D3D9D4;
         }
-        .container{ margin:0 auto; width:min(1100px,92vw); }
+        .container { margin: 0 auto; }
+        .cardRoot{ font-size: clamp(14px, 1vw + 12px, 20px); }
         .card{
-          background: var(--ink2);
+          background: var(--c-ink-2);
           color: #fff;
           border: 1px solid rgba(0,0,0,0.15);
           border-radius: 16px;
-          padding: 1.25rem;
+          padding: 1.1rem;
           box-shadow: 0 6px 20px rgba(0,0,0,0.25);
         }
-        .head{ display:flex; justify-content:space-between; align-items:flex-end; gap:1rem; margin-bottom:10px; }
-        .title{ color: var(--cloud); font-size: 1.4em; font-weight: 800; }
+        .headerBar{
+          display:flex; gap:1rem; padding:.5rem .75rem .9rem;
+          border-bottom: 1px solid rgba(211,217,212,0.16);
+        }
+        .stack{ display:flex; flex-direction:column; }
+        .hr{ height:1px; background: rgba(211,217,212,0.18); margin:1rem 0; }
 
-        .rows{ display:grid; gap:.9rem; margin-top:.2rem; }
-
-        .scoreBox{
-          background: var(--muted);
-          color: #0b1419;
-          border-radius: 12px;
-          min-height: 2.4em;
-          display:flex; align-items:center; justify-content:center;
-          font-weight:800;
+        .teamsGrid{
+          display:grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 1rem;
+          align-items: stretch;
+        }
+        @media (max-width: 800px){
+          .teamsGrid{ grid-template-columns: 1fr; }
         }
 
-        .panelGrid{ display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap:1rem; margin-top: .6rem; }
-        @media (max-width: 800px){ .panelGrid{ grid-template-columns: 1fr; } }
-
-        .panel{
+        .teamCard{
           background: rgba(33,42,49,0.45);
           border: 1px solid rgba(211,217,212,0.12);
           border-radius: 12px;
           padding: 1rem;
-        }
-
-        .input{
-          width: 100%;
-          background: var(--cloud);
-          color: #0b1419;
-          border: 1px solid var(--muted);
-          border-radius: 10px;
-          height: 2.6em;
-          padding: 0 .9em;
           font-size: 1em;
         }
-        .input::placeholder{ color: var(--muted); }
 
+        .nameRow{ display:grid; grid-template-columns: 1fr 1fr; gap:.75rem; align-items:center; }
+        .input{ width:100%; background: var(--c-cloud); border:1px solid var(--c-muted); color: var(--c-ink);
+                border-radius: 10px; height: 2.6em; padding: 0 .9em; font-size: 1em; box-sizing: border-box; }
+        .input::placeholder{ color: var(--c-muted); }
+        .input:focus{ outline: 2px solid var(--c-primary); border-color: var(--c-primary); }
+
+        /* Buttons */
         .btn{
           border: 1px solid transparent;
-          background: var(--primary);
+          background: var(--c-primary);
           color: #fff;
           border-radius: 12px;
           height: 2.8em;
           padding: 0 1.1em;
           font-weight: 700;
           font-size: 1em;
+          transition: transform .06s ease, filter .12s ease;
         }
-        .btn.pm{ font-size: 2.2em; line-height: 1; }
-        .btn-danger{ background: var(--danger); }
-        .btn-gold{ background: var(--muted); color: #0b1419; }
+        .btn:hover{ filter: brightness(1.05); transform: translateY(-1px); }
+        .btn:active{ transform: translateY(0); }
+        .btn-lg{ height: 2.4em; }
+        .btn-xl{ height: 3.2em; font-size: 1.15em; }
+        .btn.pm{ font-size: 2.3em; line-height: 1; }
 
-        .bestof{
-          width: 10.5em;
-          border-radius: 9999px;
-          height: 2.4em;
-          background: var(--cloud);
-          color: #0b1419;
-          border: 1px solid var(--muted);
-          padding: 0 .9em;
-          font-weight: 700;
-        }
+        .btn-danger{ background: #8b2e2e; }
+        .btn-gold{ background: var(--c-muted); color: #0b1419; }
 
-        .pill{
-          border-radius: 9999px;
-          height: 2.4em;
-          padding: 0 1rem;
-          font-weight: 800;
-          display:inline-flex; align-items:center; gap:.5rem;
-          border:1px solid rgba(255,255,255,.08);
-          background: #2A2A2A;
-          color: #fff;
-          cursor: pointer;
-        }
-        .pill.on{
-          background: var(--gold);
-          color: #0b1419;
-        }
+        .pill{ height:2.2em; border-radius:9999px; padding:0 .8em; }
+        .courtName{ color: var(--c-cloud); font-size: 1.35em; font-weight: 800; }
       `}</style>
 
-      <div className="container">
-        <div className="card">
-          {/* Header */}
-          <div className="head">
-            <div className="title">{externalCourtName || "Court"}</div>
-            <div style={{ display:"flex", gap: ".5rem", alignItems: "center", flexWrap: "wrap" }}>
-              <select
-                aria-label="Best of"
-                className="bestof"
-                value={s.meta?.bestOf ?? 3}
-                onChange={(e) => updateBestOf(Number(e.target.value) as BestOf)}
-              >
-                <option value={3}>Best of 3</option>
-                <option value={5}>Best of 5</option>
-              </select>
-
-              <button
-                type="button"
-                onClick={toggleGolden}
-                className={`pill ${s.meta?.golden ? "on" : ""}`}
-                title="Golden Point on/off"
-              >
-                <span>●</span> Golden
-              </button>
+      <div className="container" style={{ width: "min(1200px, 95vw)", paddingTop: 18, paddingBottom: 24 }}>
+        <div className="card cardRoot">
+          {/* Header — reads meta name live from Firebase */}
+          <div className="headerBar" style={{ justifyContent: "space-between", alignItems: "end" }}>
+            <div className="courtName">{externalCourtName || "Court"}</div>
+            <div className="stack" style={{ alignItems: "end", gap: ".5rem" }}>
+              <div style={{ display: "flex", gap: ".5rem", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <button
+                  className="btn pill"
+                  onClick={toggleGolden}
+                  title="Toggle Golden Point"
+                  style={{ background: s.golden ? "#e9b949" : "var(--c-primary)", color: s.golden ? "#0b1419" : "#fff" }}
+                >
+                  ● Golden
+                </button>
+                <select
+                  aria-label="Best of"
+                  className="input pill"
+                  value={s.meta?.bestOf ?? 3}
+                  onChange={(e) => updateBestOf(Number(e.target.value) as BestOf)}
+                  style={{ width: "9.5em" }}
+                >
+                  <option value={3}>Best of 3</option>
+                  <option value={5}>Best of 5</option>
+                </select>
+              </div>
             </div>
           </div>
 
           {/* Score rows */}
-          <div className="rows">
-            {renderRow("p1")}
-            {renderRow("p2")}
-          </div>
+          {renderRow("p1")}
+          {renderRow("p2")}
+
+          <div className="hr" />
 
           {/* Team panels */}
-          <div className="panelGrid">
+          <div className="teamsGrid">
             {/* TEAM A */}
-            <div className="panel">
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:".75rem" }}>
-                <div>
-                  <label style={{ color:"var(--cloud)", display:"block", marginBottom:".35rem" }}>Player 1</label>
-                  <input
-                    className="input"
-                    placeholder="Enter Name"
-                    value={s.players["1a"].name}
-                    onChange={(e) => updatePlayer("1a", "name", e.target.value)}
-                  />
-                  <select
-                    className="input"
-                    value={s.players["1a"].cc}
-                    onChange={(e) => updatePlayer("1a", "cc", e.target.value)}
-                    style={{ marginTop: ".5rem" }}
-                  >
-                    {COUNTRIES.map(([f, n]) => (
-                      <option key={`${f}-${n}`} value={f}>{f} {n}</option>
-                    ))}
-                  </select>
+            <div className="card teamCard">
+              <div className="stack" style={{ gap: ".75rem" }}>
+                <div className="nameRow">
+                  <div className="stack" style={{ gap: ".4rem" }}>
+                    <label style={{ color: "var(--c-cloud)", fontSize: "1em" }}>Player 1</label>
+                    <input
+                      className="input"
+                      placeholder="Enter Name"
+                      value={s.players["1a"].name}
+                      onChange={(e) => updatePlayer("1a", "name", e.target.value)}
+                      maxLength={30}
+                    />
+                    <select
+                      className="input"
+                      value={s.players["1a"].cc}
+                      onChange={(e) => updatePlayer("1a", "cc", e.target.value)}
+                    >
+                      {COUNTRIES.map(([f, n]) => (
+                        <option key={`${f}-${n}`} value={f}>{f} {n}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="stack" style={{ gap: ".4rem" }}>
+                    <label style={{ color: "var(--c-cloud)", fontSize: "1em" }}>Player 2</label>
+                    <input
+                      className="input"
+                      placeholder="Enter Name"
+                      value={s.players["1b"].name}
+                      onChange={(e) => updatePlayer("1b", "name", e.target.value)}
+                      maxLength={30}
+                    />
+                    <select
+                      className="input"
+                      value={s.players["1b"].cc}
+                      onChange={(e) => updatePlayer("1b", "cc", e.target.value)}
+                    >
+                      {COUNTRIES.map(([f, n]) => (
+                        <option key={`${f}-${n}`} value={f}>{f} {n}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                <div>
-                  <label style={{ color:"var(--cloud)", display:"block", marginBottom:".35rem" }}>Player 2</label>
-                  <input
-                    className="input"
-                    placeholder="Enter Name"
-                    value={s.players["1b"].name}
-                    onChange={(e) => updatePlayer("1b", "name", e.target.value)}
-                  />
-                  <select
-                    className="input"
-                    value={s.players["1b"].cc}
-                    onChange={(e) => updatePlayer("1b", "cc", e.target.value)}
-                    style={{ marginTop: ".5rem" }}
-                  >
-                    {COUNTRIES.map(([f, n]) => (
-                      <option key={`${f}-${n}`} value={f}>{f} {n}</option>
-                    ))}
-                  </select>
+                <div className="teamsGrid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                  <button className="btn btn-xl pm" onClick={() => addPoint("p1", +1)}>+</button>
+                  <button className="btn btn-xl pm" onClick={() => addPoint("p1", -1)}>−</button>
                 </div>
-              </div>
-
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:".75rem", marginTop: ".75rem" }}>
-                <button className="btn pm" onClick={() => addPoint("p1", +1)}>+</button>
-                <button className="btn pm" onClick={() => addPoint("p1", -1)}>−</button>
               </div>
             </div>
 
             {/* TEAM B */}
-            <div className="panel">
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:".75rem" }}>
-                <div>
-                  <label style={{ color:"var(--cloud)", display:"block", marginBottom:".35rem" }}>Player 3</label>
-                  <input
-                    className="input"
-                    placeholder="Enter Name"
-                    value={s.players["2a"].name}
-                    onChange={(e) => updatePlayer("2a", "name", e.target.value)}
-                  />
-                  <select
-                    className="input"
-                    value={s.players["2a"].cc}
-                    onChange={(e) => updatePlayer("2a", "cc", e.target.value)}
-                    style={{ marginTop: ".5rem" }}
-                  >
-                    {COUNTRIES.map(([f, n]) => (
-                      <option key={`${f}-${n}`} value={f}>{f} {n}</option>
-                    ))}
-                  </select>
+            <div className="card teamCard">
+              <div className="stack" style={{ gap: ".75rem" }}>
+                <div className="nameRow">
+                  <div className="stack" style={{ gap: ".4rem" }}>
+                    <label style={{ color: "var(--c-cloud)", fontSize: "1em" }}>Player 3</label>
+                    <input
+                      className="input"
+                      placeholder="Enter Name"
+                      value={s.players["2a"].name}
+                      onChange={(e) => updatePlayer("2a", "name", e.target.value)}
+                      maxLength={30}
+                    />
+                    <select
+                      className="input"
+                      value={s.players["2a"].cc}
+                      onChange={(e) => updatePlayer("2a", "cc", e.target.value)}
+                    >
+                      {COUNTRIES.map(([f, n]) => (
+                        <option key={`${f}-${n}`} value={f}>{f} {n}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="stack" style={{ gap: ".4rem" }}>
+                    <label style={{ color: "var(--c-cloud)", fontSize: "1em" }}>Player 4</label>
+                    <input
+                      className="input"
+                      placeholder="Enter Name"
+                      value={s.players["2b"].name}
+                      onChange={(e) => updatePlayer("2b", "name", e.target.value)}
+                      maxLength={30}
+                    />
+                    <select
+                      className="input"
+                      value={s.players["2b"].cc}
+                      onChange={(e) => updatePlayer("2b", "cc", e.target.value)}
+                    >
+                      {COUNTRIES.map(([f, n]) => (
+                        <option key={`${f}-${n}`} value={f}>{f} {n}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                <div>
-                  <label style={{ color:"var(--cloud)", display:"block", marginBottom:".35rem" }}>Player 4</label>
-                  <input
-                    className="input"
-                    placeholder="Enter Name"
-                    value={s.players["2b"].name}
-                    onChange={(e) => updatePlayer("2b", "name", e.target.value)}
-                  />
-                  <select
-                    className="input"
-                    value={s.players["2b"].cc}
-                    onChange={(e) => updatePlayer("2b", "cc", e.target.value)}
-                    style={{ marginTop: ".5rem" }}
-                  >
-                    {COUNTRIES.map(([f, n]) => (
-                      <option key={`${f}-${n}`} value={f}>{f} {n}</option>
-                    ))}
-                  </select>
+                <div className="teamsGrid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                  <button className="btn btn-xl pm" onClick={() => addPoint("p2", +1)}>+</button>
+                  <button className="btn btn-xl pm" onClick={() => addPoint("p2", -1)}>−</button>
                 </div>
-              </div>
-
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:".75rem", marginTop: ".75rem" }}>
-                <button className="btn pm" onClick={() => addPoint("p2", +1)}>+</button>
-                <button className="btn pm" onClick={() => addPoint("p2", -1)}>−</button>
               </div>
             </div>
           </div>
 
           {/* Footer controls */}
           <div
+            className="footerControls"
             style={{
               display: "flex",
-              gap: ".75rem",
+              gap: "0.6rem",
               flexWrap: "wrap",
               justifyContent: "center",
               alignItems: "center",
-              marginTop: ".9rem",
+              marginTop: "0.9rem",
               width: "100%",
             }}
           >
-            <button className="btn btn-danger" onClick={resetLastGame}>Reset Game</button>
-            <button className="btn btn-gold" onClick={newMatch}>New Match</button>
-            <button className="btn" onClick={toggleServer} title="Toggle server">Serve 🎾</button>
-            <button className="btn" onClick={resetPoints} title="Reset only points">Reset Points</button>
+            <button className="btn btn-danger btn-lg" onClick={resetGameOneStep}>Reset Game</button>
+            <button className="btn btn-gold btn-lg" onClick={newMatch}>New Match</button>
+            <button className="btn btn-lg" onClick={toggleServer} title="Toggle server">Serve 🎾</button>
+            <button className="btn btn-lg" onClick={resetPoints} title="Reset only points">Reset Points</button>
           </div>
         </div>
       </div>
