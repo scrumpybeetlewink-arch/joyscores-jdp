@@ -1,395 +1,584 @@
 "use client";
+export const dynamic = "force-static";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue, set } from "firebase/database";
-import { COUNTRIES } from "@/lib/countries"; // ← use your existing countries source
 
-type Sets = { p1: (string | number)[]; p2: (string | number)[] };
-type PlayersState = Record<string, { cc: string }>;
+/** ---------- Types ---------- */
+type Side = "p1" | "p2";
+type Point = 0 | 15 | 30 | 40 | "Ad";
+type BestOf = 3 | 5;
 
-const DEFAULT_PLAYERS: PlayersState = {
-  "1a": { cc: "MY" },
-  "1b": { cc: "MY" },
-  "2a": { cc: "MY" },
-  "2b": { cc: "MY" },
+type Player = { name: string; cc: string };
+type ScoreState = {
+  meta: { name: string; bestOf: BestOf };
+  players: { "1a": Player; "1b": Player; "2a": Player; "2b": Player };
+  points: Record<Side, Point>;
+  games: Record<Side, number>;
+  sets: { p1: number[]; p2: number[] };
+  tiebreak: boolean;
+  tb: Record<Side, number>;
+  server: Side | null;
+  golden?: boolean;        // golden point enabled?
+  ts?: number;
 };
 
-const COURT_DEFAULT_NAME = "Court";
+/** ---------- Countries ---------- */
+const COUNTRIES: Array<[flag: string, name: string]> = [
+  ["🇲🇾","Malaysia"],["🇸🇬","Singapore"],["🇹🇭","Thailand"],["🇮🇩","Indonesia"],["🇵🇭","Philippines"],
+  ["🇻🇳","Vietnam"],["🇮🇳","India"],["🇯🇵","Japan"],["🇰🇷","South Korea"],["🇨🇳","China"],
+  ["🇺🇸","United States"],["🇨🇦","Canada"],["🇬🇧","United Kingdom"],["🇫🇷","France"],["🇩🇪","Germany"],
+  ["🇪🇸","Spain"],["🇮🇹","Italy"],["🇧🇷","Brazil"],["🇦🇷","Argentina"],["🇿🇦","South Africa"],
+  ["🏳️","(None)"]
+];
 
+/** ---------- Helpers ---------- */
+const flag = (cc: string) => cc || "🏳️";
+const nextPoint = (p: Point): Point =>
+  p === 0 ? 15 : p === 15 ? 30 : p === 30 ? 40 : p === 40 ? "Ad" : "Ad";
+const prevPoint = (p: Point): Point =>
+  p === 15 ? 0 : p === 30 ? 15 : p === 40 ? 30 : 40;
+const nameOrLabel = (n: string, fallback: string) => (n?.trim() ? n : fallback);
+
+/** ---------- Defaults ---------- */
+const defaultState: ScoreState = {
+  meta: { name: "", bestOf: 3 },
+  players: {
+    "1a": { name: "", cc: "🇲🇾" },
+    "1b": { name: "", cc: "🇲🇾" },
+    "2a": { name: "", cc: "🇲🇾" },
+    "2b": { name: "", cc: "🇲🇾" },
+  },
+  points: { p1: 0, p2: 0 },
+  games: { p1: 0, p2: 0 },
+  sets: { p1: [], p2: [] },
+  tiebreak: false,
+  tb: { p1: 0, p2: 0 },
+  server: "p1",
+  golden: false,
+  ts: undefined,
+};
+
+function normalize(v: any): ScoreState {
+  const safe: ScoreState = {
+    meta: {
+      name: (v?.meta?.name ?? ""),
+      bestOf: (v?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
+    },
+    players: {
+      "1a": { name: v?.players?.["1a"]?.name ?? "", cc: v?.players?.["1a"]?.cc ?? "🇲🇾" },
+      "1b": { name: v?.players?.["1b"]?.name ?? "", cc: v?.players?.["1b"]?.cc ?? "🇲🇾" },
+      "2a": { name: v?.players?.["2a"]?.name ?? "", cc: v?.players?.["2a"]?.cc ?? "🇲🇾" },
+      "2b": { name: v?.players?.["2b"]?.name ?? "", cc: v?.players?.["2b"]?.cc ?? "🇲🇾" },
+    },
+    points: {
+      p1: (v?.points?.p1 ?? 0) as Point,
+      p2: (v?.points?.p2 ?? 0) as Point,
+    },
+    games: {
+      p1: Number.isFinite(v?.games?.p1) ? v.games.p1 : 0,
+      p2: Number.isFinite(v?.games?.p2) ? v.games.p2 : 0,
+    },
+    sets: {
+      p1: Array.isArray(v?.sets?.p1) ? v.sets.p1 : [],
+      p2: Array.isArray(v?.sets?.p2) ? v.sets.p2 : [],
+    },
+    tiebreak: !!v?.tiebreak,
+    tb: {
+      p1: Number.isFinite(v?.tb?.p1) ? v.tb.p1 : 0,
+      p2: Number.isFinite(v?.tb?.p2) ? v.tb.p2 : 0,
+    },
+    server: v?.server === "p1" || v?.server === "p2" ? v.server : "p1",
+    golden: !!v?.golden,
+    ts: typeof v?.ts === "number" ? v.ts : undefined,
+  };
+  return safe;
+}
+
+/** =========================================================
+ *  Page wrapper (Suspense) so useSearchParams is compliant
+ *  =========================================================
+ */
 export default function ControllerPage() {
-  // ----- get ?court= from URL (client only; avoids Suspense export error)
-  const [court, setCourt] = useState<string>("court1");
-  useEffect(() => {
-    const s = new URLSearchParams(window.location.search);
-    setCourt(s.get("court") || "court1");
-  }, []);
+  return (
+    <Suspense fallback={<main style={{padding:24,color:"#fff"}}>Loading…</main>}>
+      <ControllerInner />
+    </Suspense>
+  );
+}
 
-  // ----- UI state
-  const [courtName, setCourtName] = useState(COURT_DEFAULT_NAME);
-  const [bestOf, setBestOf] = useState<3 | 5>(3);
-  const [golden, setGolden] = useState<boolean>(false);
+function ControllerInner() {
+  const params = useSearchParams();
+  const courtId = params.get("court") || "court1";
+  const COURT_PATH = `/courts/${courtId}`;
+  const META_NAME_PATH = `/courts/${courtId}/meta/name`;
 
-  const [players, setPlayers] = useState<PlayersState>(DEFAULT_PLAYERS);
-  const [p1a, setP1a] = useState(""); // Player 1 name
-  const [p1b, setP1b] = useState(""); // Player 2 name
-  const [p2a, setP2a] = useState(""); // Player 3 name
-  const [p2b, setP2b] = useState(""); // Player 4 name
-
-  const [points, setPoints] = useState<{ p1: number; p2: number }>({ p1: 0, p2: 0 });
-  const [sets, setSets] = useState<Sets>({ p1: [], p2: [] });
-  const [serve, setServe] = useState<"p1" | "p2">("p1");
-
-  const base = useMemo(() => `/courts/${court}`, [court]);
+  const [s, setS] = useState<ScoreState>(defaultState);
+  const [externalCourtName, setExternalCourtName] = useState<string>("");
 
   useEffect(() => {
-    ensureAnonLogin().catch(() => {});
-  }, []);
+    let unsubScore = () => {};
+    let unsubName = () => {};
 
-  // ----- Firebase bindings
-  useEffect(() => {
-    if (!court) return;
+    (async () => {
+      try { await ensureAnonLogin(); } catch {}
+      const scoreRef = ref(db, COURT_PATH);
+      const nameRef = ref(db, META_NAME_PATH);
 
-    const offName = onValue(ref(db, `${base}/name`), (s) => {
-      const v = s.val();
-      setCourtName(typeof v === "string" && v.trim() ? v : COURT_DEFAULT_NAME);
-    });
-
-    const offCfg = onValue(ref(db, `${base}/config`), (s) => {
-      const v = s.val() || {};
-      setBestOf(v.bestOf === 5 ? 5 : 3);
-      setGolden(!!v.golden);
-    });
-
-    const offPlayers = onValue(ref(db, `${base}/players`), (s) => {
-      const v = s.val() as PlayersState | null;
-      setPlayers(v || DEFAULT_PLAYERS);
-    });
-
-    const offNames = onValue(ref(db, `${base}/names`), (s) => {
-      const v = s.val() || {};
-      setP1a(v.p1a || "");
-      setP1b(v.p1b || "");
-      setP2a(v.p2a || "");
-      setP2b(v.p2b || "");
-    });
-
-    const offScore = onValue(ref(db, `${base}/score`), (s) => {
-      const v = s.val() || {};
-      setPoints({ p1: v.p1 ?? 0, p2: v.p2 ?? 0 });
-      setSets({
-        p1: Array.isArray(v.sets?.p1) ? v.sets.p1 : [],
-        p2: Array.isArray(v.sets?.p2) ? v.sets.p2 : [],
+      unsubScore = onValue(scoreRef, (snap) => {
+        const v = snap.val();
+        setS(v ? normalize(v) : defaultState);
       });
-      setServe(v.serve === "p2" ? "p2" : "p1");
-    });
+
+      unsubName = onValue(nameRef, (snap) => {
+        const v = snap.val();
+        setExternalCourtName(typeof v === "string" ? v : "");
+      });
+    })();
 
     return () => {
-      offName();
-      offCfg();
-      offPlayers();
-      offNames();
-      offScore();
+      unsubScore?.();
+      unsubName?.();
     };
-  }, [base, court]);
+  }, [COURT_PATH, META_NAME_PATH]);
 
-  // ----- writers
-  const write = (path: string, value: any) => set(ref(db, path), value);
+  async function commit(next: ScoreState) {
+    next.ts = Date.now();
+    await set(ref(db, COURT_PATH), next);
+  }
+  const clone = () => JSON.parse(JSON.stringify(s)) as ScoreState;
 
-  const saveNames = (patch: Partial<{ p1a: string; p1b: string; p2a: string; p2b: string }>) => {
-    write(`${base}/names`, { p1a, p1b, p2a, p2b, ...patch });
-  };
+  function winGame(n: ScoreState, side: Side) {
+    n.games[side] += 1;
+    n.points = { p1: 0, p2: 0 };
+    const gA = n.games.p1, gB = n.games.p2;
+    const lead = Math.abs(gA - gB);
 
-  const updateCountry = (key: "1a" | "1b" | "2a" | "2b", cc: string) => {
-    const next = { ...(players || DEFAULT_PLAYERS), [key]: { cc } };
-    setPlayers(next);
-    write(`${base}/players`, next);
-  };
+    if ((gA >= 6 || gB >= 6) && lead >= 2) {
+      n.sets.p1.push(gA); n.sets.p2.push(gB);
+      n.games = { p1: 0, p2: 0 };
+      n.tiebreak = false; n.tb = { p1: 0, p2: 0 };
+    } else if (gA === 6 && gB === 6) {
+      n.tiebreak = true; n.tb = { p1: 0, p2: 0 };
+    }
+  }
 
-  const saveConfig = (patch: Partial<{ bestOf: 3 | 5; golden: boolean }>) => {
-    const cfg = { bestOf, golden, ...patch };
-    setBestOf(cfg.bestOf);
-    setGolden(cfg.golden);
-    write(`${base}/config`, cfg);
-  };
+  function addPoint(side: Side, dir: 1 | -1) {
+    const n = clone();
 
-  const bump = (side: "p1" | "p2", op: "+" | "-") => {
-    const cur = points[side] || 0;
-    const nextVal = Math.max(0, op === "+" ? cur + 1 : cur - 1);
-    const next = { ...points, [side]: nextVal };
-    setPoints(next);
-    write(`${base}/score`, { p1: next.p1, p2: next.p2, sets, serve });
-  };
+    if (n.tiebreak) {
+      n.tb[side] = Math.max(0, n.tb[side] + dir);
+      const a = n.tb.p1, b = n.tb.p2;
+      if ((a >= 7 || b >= 7) && Math.abs(a - b) >= 2) {
+        if (a > b) { n.sets.p1.push(n.games.p1 + 1); n.sets.p2.push(n.games.p2); }
+        else { n.sets.p2.push(n.games.p2 + 1); n.sets.p1.push(n.games.p1); }
+        n.games = { p1: 0, p2: 0 };
+        n.points = { p1: 0, p2: 0 };
+        n.tiebreak = false; n.tb = { p1: 0, p2: 0 };
+      }
+      return commit(n);
+    }
 
-  const toggleServe = () => {
-    const next = serve === "p1" ? "p2" : "p1";
-    setServe(next);
-    write(`${base}/score`, { p1: points.p1, p2: points.p2, sets, serve: next });
-  };
+    if (dir === 1) {
+      const opp: Side = side === "p1" ? "p2" : "p1";
+      const ps = n.points[side], po = n.points[opp];
 
-  const resetPoints = () => {
-    setPoints({ p1: 0, p2: 0 });
-    write(`${base}/score`, { p1: 0, p2: 0, sets, serve });
-  };
+      // Golden point logic (only when enabled)
+      if (n.golden && ps === 40 && po === 40) {
+        winGame(n, side);            // next won point at 40-40 wins game
+      } else {
+        if (ps === 40 && (po === 0 || po === 15 || po === 30)) winGame(n, side);
+        else if (ps === 40 && po === "Ad") n.points[opp] = 40;
+        else if (ps === 40 && po === 40) n.points[side] = "Ad";
+        else if (ps === "Ad") winGame(n, side);
+        else n.points[side] = nextPoint(ps);
+      }
+    } else {
+      n.points[side] = prevPoint(n.points[side]);
+    }
+    commit(n);
+  }
 
-  // “Reset Game” = add one game to the side with higher points, then clear points
-  const resetGame = () => {
-    let sp1 = [...sets.p1];
-    let sp2 = [...sets.p2];
-    if ((points.p1 || 0) > (points.p2 || 0)) sp1.push((Number(sp1.at(-1)) || 0) + 1);
-    else if ((points.p2 || 0) > (points.p1 || 0)) sp2.push((Number(sp2.at(-1)) || 0) + 1);
+  function toggleServer() {
+    const n = clone();
+    n.server = n.server === "p1" ? "p2" : "p1";
+    commit(n);
+  }
 
-    const max = bestOf === 5 ? 5 : 3;
-    sp1 = sp1.slice(0, max);
-    sp2 = sp2.slice(0, max);
+  // Reset Game: remove exactly 1 game from the leader (request)
+  function resetGameOneStep() {
+    const n = clone();
+    const { p1: g1, p2: g2 } = n.games;
+    if (g1 > g2) n.games.p1 = Math.max(0, g1 - 1);
+    else if (g2 > g1) n.games.p2 = Math.max(0, g2 - 1);
+    // points remain as-is per last decision; clear tiebreak if any
+    if (n.tiebreak) n.tiebreak = false, n.tb = { p1: 0, p2: 0 };
+    commit(n);
+  }
 
-    const nxtSets: Sets = { p1: sp1, p2: sp2 };
-    setSets(nxtSets);
-    setPoints({ p1: 0, p2: 0 });
-    write(`${base}/score`, { p1: 0, p2: 0, sets: nxtSets, serve });
-  };
+  // Reset only points (not games/sets)
+  function resetPoints() {
+    const n = clone();
+    n.points = { p1: 0, p2: 0 };
+    n.tiebreak = false;
+    n.tb = { p1: 0, p2: 0 };
+    commit(n);
+  }
 
-  const newMatch = () => {
-    const zero: Sets = { p1: [], p2: [] };
-    setSets(zero);
-    setPoints({ p1: 0, p2: 0 });
-    write(`${base}/score`, { p1: 0, p2: 0, sets: zero, serve: "p1" });
-  };
+  function newMatch() {
+    commit({
+      ...defaultState,
+      meta: { name: externalCourtName, bestOf: (s.meta?.bestOf ?? 3) as BestOf },
+      players: {
+        "1a": { name: "", cc: "🇲🇾" },
+        "1b": { name: "", cc: "🇲🇾" },
+        "2a": { name: "", cc: "🇲🇾" },
+        "2b": { name: "", cc: "🇲🇾" },
+      },
+      server: "p1",
+      ts: Date.now(),
+    });
+  }
 
-  // ----- UI helpers (unchanged look)
-  const countryFlag = (cc?: string) => COUNTRIES.find((c) => c.code === cc)?.flag ?? "🏳️";
-  const teamLine = (a: string, b: string, aCC: string, bCC: string) =>
-    `${countryFlag(aCC)} ${a || "Player 1"} / ${countryFlag(bCC)} ${b || "Player 2"}`;
+  async function updatePlayer(key: "1a"|"1b"|"2a"|"2b", field: "name"|"cc", val: string) {
+    const n = clone();
+    const v = field === "name" ? val.slice(0, 30) : val;   // hard-limit to 30 chars
+    (n.players[key] as any)[field] = v;
+    await commit(n);
+  }
 
-  const setCells = (side: "p1" | "p2") => {
-    const arr = sets[side] || [];
-    const max = bestOf === 5 ? 5 : 3;
-    return Array.from({ length: max }, (_, i) => arr[i] ?? "");
-  };
+  async function updateBestOf(v: BestOf) {
+    const n = clone();
+    n.meta.bestOf = v;
+    await commit(n);
+  }
+
+  async function toggleGolden() {
+    const n = clone();
+    n.golden = !n.golden;
+    await commit(n);
+  }
+
+  const maxSets = useMemo(() => ((s.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s.meta?.bestOf]);
+
+  /** ---------- Row Renderer ---------- */
+  function renderRow(side: Side) {
+    const players = s.players ?? defaultState.players;
+    const sets = s.sets ?? defaultState.sets;
+    const games = s.games ?? defaultState.games;
+
+    const p1a = nameOrLabel(players["1a"]?.name, "Player 1");
+    const p1b = nameOrLabel(players["1b"]?.name, "Player 2");
+    const p2a = nameOrLabel(players["2a"]?.name, "Player 3");
+    const p2b = nameOrLabel(players["2b"]?.name, "Player 4");
+
+    const teamLine =
+      side === "p1"
+        ? `${flag(players["1a"]?.cc)} ${p1a} / ${flag(players["1b"]?.cc)} ${p1b}`
+        : `${flag(players["2a"]?.cc)} ${p2a} / ${flag(players["2b"]?.cc)} ${p2b}`;
+
+    const finishedCount = Math.max(sets.p1?.length ?? 0, sets.p2?.length ?? 0);
+
+    const setCells = Array.from({ length: maxSets }).map((_, i) => {
+      if (i < finishedCount) return side === "p1" ? (sets.p1?.[i] ?? "") : (sets.p2?.[i] ?? "");
+      if (i === finishedCount) return side === "p1" ? (games?.p1 ?? "") : (games?.p2 ?? "");
+      return "";
+    });
+
+    const scoreBoxStyle = {
+      fontSize: "1em",
+      background: "var(--c-muted)",
+      color: "#0b1419",
+      borderRadius: 12,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: "2.6em",
+      padding: "0.1em 0",
+      fontWeight: 800,
+    } as const;
+
+    const pointsLabel = s.tiebreak ? `TB ${(s.tb ?? defaultState.tb)[side]}` : (s.points ?? defaultState.points)[side];
+
+    return (
+      <div
+        className="row"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 3.2em minmax(0,1fr)",
+          gap: "1rem",
+          alignItems: "center",
+          fontSize: "1.35em",
+          margin: "10px 0",
+        }}
+      >
+        <div className="teamline" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {teamLine}
+        </div>
+
+        <div className="serveCol" style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
+          {s.server === side && <span aria-label="serving" title="Serving" style={{ fontSize: "1em", lineHeight: 1 }}>🎾</span>}
+        </div>
+
+        <div
+          className="scoreGrid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)`,
+            gap: ".6rem",
+          }}
+        >
+          {setCells.map((v, i) => (
+            <div key={i} className="setBox" style={scoreBoxStyle}>
+              {v}
+            </div>
+          ))}
+          <div className="pointsBox" style={scoreBoxStyle}>{String(pointsLabel)}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <main className="wrap">
-      <section className="card">
-        {/* Header */}
-        <div className="head">
-          <div className="title">{courtName}</div>
-          <div className="controls">
-            <button
-              className={`pill ${golden ? "on" : ""}`}
-              onClick={() => saveConfig({ golden: !golden })}
-            >
-              <span className="dot" /> Golden
-            </button>
-            <select
-              className="select"
-              value={bestOf}
-              onChange={(e) => saveConfig({ bestOf: Number(e.target.value) === 5 ? 5 : 3 })}
-            >
-              <option value={3}>Best of 3</option>
-              <option value={5}>Best of 5</option>
-            </select>
-          </div>
-        </div>
+    <div className="pageWrap" style={{ background: "var(--c-ink)", minHeight: "100vh" }}>
+      <style>{`
+        :root{
+          --c-ink:#212A31;
+          --c-ink-2:#0B1B2B;   /* dark navy card */
+          --c-primary:#124E66; /* +/- and Best Of background */
+          --c-muted:#748D92;   /* set/point boxes */
+          --c-cloud:#D3D9D4;
+        }
+        .container { margin: 0 auto; }
+        .cardRoot{ font-size: clamp(14px, 1vw + 12px, 20px); }
+        .card{
+          background: var(--c-ink-2);
+          color: #fff;
+          border: 1px solid rgba(0,0,0,0.15);
+          border-radius: 16px;
+          padding: 1.1rem;
+          box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+        }
+        .headerBar{
+          display:flex; gap:1rem; padding:.5rem .75rem .9rem;
+          border-bottom: 1px solid rgba(211,217,212,0.16);
+        }
+        .stack{ display:flex; flex-direction:column; }
+        .hr{ height:1px; background: rgba(211,217,212,0.18); margin:1rem 0; }
 
-        {/* Score rows */}
-        <div className="rows">
-          <div className="row">
-            <div className="teamline">
-              {teamLine(p1a, p1b, players["1a"]?.cc || "MY", players["1b"]?.cc || "MY")}
-            </div>
-            <div className="serve">🎾</div>
-            <div className="grid">
-              <div className="box">{points.p1}</div>
-              {setCells("p1").map((v, i) => (
-                <div className="box" key={`p1_${i}`}>{v as any}</div>
-              ))}
-            </div>
-          </div>
+        .teamsGrid{
+          display:grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 1rem;
+          align-items: stretch;
+        }
+        @media (max-width: 800px){
+          .teamsGrid{ grid-template-columns: 1fr; }
+        }
 
-          <div className="row">
-            <div className="teamline">
-              {teamLine(p2a, p2b, players["2a"]?.cc || "MY", players["2b"]?.cc || "MY")}
-            </div>
-            <div className="serve" />
-            <div className="grid">
-              <div className="box">{points.p2}</div>
-              {setCells("p2").map((v, i) => (
-                <div className="box" key={`p2_${i}`}>{v as any}</div>
-              ))}
-            </div>
-          </div>
-        </div>
+        .teamCard{
+          background: rgba(33,42,49,0.45);
+          border: 1px solid rgba(211,217,212,0.12);
+          border-radius: 12px;
+          padding: 1rem;
+          font-size: 1em;
+        }
 
-        {/* Player panels – EXACT approved layout */}
-        <div className="panelGrid">
-          {/* P1 */}
-          <section className="panel">
-            <div className="panelTitle">Player 1</div>
-            <input
-              className="input"
-              placeholder="Enter Name"
-              value={p1a}
-              maxLength={30}
-              onChange={(e) => {
-                setP1a(e.target.value);
-                saveNames({ p1a: e.target.value });
-              }}
-            />
-            <select
-              className="input"
-              value={players["1a"]?.cc || "MY"}
-              onChange={(e) => updateCountry("1a", e.target.value)}
-            >
-              {COUNTRIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.flag} {c.name}
-                </option>
-              ))}
-            </select>
+        .nameRow{ display:grid; grid-template-columns: 1fr 1fr; gap:.75rem; align-items:center; }
+        .input{ width:100%; background: var(--c-cloud); border:1px solid var(--c-muted); color: var(--c-ink);
+                border-radius: 10px; height: 2.6em; padding: 0 .9em; font-size: 1em; box-sizing: border-box; }
+        .input::placeholder{ color: var(--c-muted); }
+        .input:focus{ outline: 2px solid var(--c-primary); border-color: var(--c-primary); }
 
-            <div className="btnRow">
-              <button className="btnBig" onClick={() => bump("p1", "+")}>+</button>
-              <button className="btnBig" onClick={() => bump("p1", "-")}>−</button>
-            </div>
-          </section>
+        /* Buttons */
+        .btn{
+          border: 1px solid transparent;
+          background: var(--c-primary);
+          color: #fff;
+          border-radius: 12px;
+          height: 2.8em;
+          padding: 0 1.1em;
+          font-weight: 700;
+          font-size: 1em;
+          transition: transform .06s ease, filter .12s ease;
+        }
+        .btn:hover{ filter: brightness(1.05); transform: translateY(-1px); }
+        .btn:active{ transform: translateY(0); }
+        .btn-lg{ height: 2.4em; }
+        .btn-xl{ height: 3.2em; font-size: 1.15em; }
+        .btn.pm{ font-size: 2.3em; line-height: 1; }
 
-          {/* P2 */}
-          <section className="panel">
-            <div className="panelTitle">Player 2</div>
-            <input
-              className="input"
-              placeholder="Enter Name"
-              value={p1b}
-              maxLength={30}
-              onChange={(e) => {
-                setP1b(e.target.value);
-                saveNames({ p1b: e.target.value });
-              }}
-            />
-            <select
-              className="input"
-              value={players["1b"]?.cc || "MY"}
-              onChange={(e) => updateCountry("1b", e.target.value)}
-            >
-              {COUNTRIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.flag} {c.name}
-                </option>
-              ))}
-            </select>
+        .btn-danger{ background: #8b2e2e; }
+        .btn-gold{ background: var(--c-muted); color: #0b1419; }
 
-            <div className="btnRow">
-              <button className="btnBig" onClick={() => bump("p2", "+")}>+</button>
-              <button className="btnBig" onClick={() => bump("p2", "-")}>−</button>
-            </div>
-          </section>
-
-          {/* P3 */}
-          <section className="panel">
-            <div className="panelTitle">Player 3</div>
-            <input
-              className="input"
-              placeholder="Enter Name"
-              value={p2a}
-              maxLength={30}
-              onChange={(e) => {
-                setP2a(e.target.value);
-                saveNames({ p2a: e.target.value });
-              }}
-            />
-            <select
-              className="input"
-              value={players["2a"]?.cc || "MY"}
-              onChange={(e) => updateCountry("2a", e.target.value)}
-            >
-              {COUNTRIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.flag} {c.name}
-                </option>
-              ))}
-            </select>
-
-            <div className="btnRow">
-              <button className="btnBig" onClick={() => bump("p2", "+")}>+</button>
-              <button className="btnBig" onClick={() => bump("p2", "-")}>−</button>
-            </div>
-          </section>
-
-          {/* P4 */}
-          <section className="panel">
-            <div className="panelTitle">Player 4</div>
-            <input
-              className="input"
-              placeholder="Enter Name"
-              value={p2b}
-              maxLength={30}
-              onChange={(e) => {
-                setP2b(e.target.value);
-                saveNames({ p2b: e.target.value });
-              }}
-            />
-            <select
-              className="input"
-              value={players["2b"]?.cc || "MY"}
-              onChange={(e) => updateCountry("2b", e.target.value)}
-            >
-              {COUNTRIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.flag} {c.name}
-                </option>
-              ))}
-            </select>
-
-            <div className="btnRow">
-              <button className="btnBig" onClick={() => bump("p2", "+")}>+</button>
-              <button className="btnBig" onClick={() => bump("p2", "-")}>−</button>
-            </div>
-          </section>
-        </div>
-
-        {/* Footer controls – sizes & colors consistent */}
-        <div className="footerBtns">
-          <button className="btnDanger btnLg" onClick={resetGame}>Reset Game</button>
-          <button className="btnMuted btnLg" onClick={newMatch}>New Match</button>
-          <button className="btnPrimary btnLg" onClick={toggleServe}>
-            Serve <span aria-hidden>🎾</span>
-          </button>
-          <button className="btnDanger btnLg" onClick={resetPoints}>Reset Points</button>
-        </div>
-      </section>
-
-      <style jsx>{`
-        :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; --teal:#124E66; }
-        .wrap{ background:var(--ink); min-height:100vh; padding:18px 2vw; }
-        .card{ margin:0 auto; width:min(1100px,92vw); background:var(--ink2); color:#fff; border:1px solid rgba(0,0,0,.15); border-radius:16px; padding:1.25rem; box-shadow:0 6px 20px rgba(0,0,0,.25); }
-        .head{ display:flex; justify-content:space-between; align-items:center; gap:1rem; }
-        .title{ color:var(--cloud); font-weight:800; font-size:1.8rem; }
-        .controls{ display:flex; gap:.6rem; align-items:center; }
-        .pill{ height:2.1rem; padding:0 .9rem; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:#26414B; color:#fff; font-weight:700; }
-        .pill.on{ background:#2C6C3B; }
-        .pill .dot{ display:inline-block; width:.5rem; height:.5rem; border-radius:50%; background:#fff; margin-right:.5rem; }
-        .select{ height:2.1rem; border-radius:999px; padding:0 .8rem; border:1px solid rgba(255,255,255,.12); background:var(--cloud); color:#0b1419; font-weight:700; }
-
-        .rows{ display:grid; gap:.9rem; margin-top:.9rem; }
-        .row{ display:grid; grid-template-columns: 1fr 3rem minmax(0,1fr); gap:1rem; align-items:center; font-size:1.2rem; }
-        .teamline{ color:var(--cloud); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-        .serve{ text-align:center; }
-        .grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:.6rem; }
-        .box{ background:var(--muted); color:#0b1419; border-radius:12px; min-height:2.6em; display:flex; align-items:center; justify-content:center; font-weight:800; }
-
-        .panelGrid{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:1rem; margin-top:1rem; }
-        .panel{ background:rgba(33,42,49,.45); border:1px solid rgba(211,217,212,.12); border-radius:12px; padding:1rem; }
-        .panelTitle{ font-weight:800; color:var(--cloud); margin-bottom:.4rem; }
-        .input{ width:100%; background:#D3D9D4; color:#0b1419; border:1px solid var(--muted); border-radius:10px; height:2.6em; padding:0 .9em; margin:.4rem 0; }
-        .btnRow{ display:grid; grid-template-columns:1fr 1fr; gap:.8rem; margin-top:.4rem; }
-        .btnBig{ background:#0F4253; border:1px solid rgba(255,255,255,.08); color:#fff; height:64px; border-radius:12px; font-weight:900; font-size:1.6rem; }
-
-        .footerBtns{ display:flex; gap:.8rem; justify-content:flex-start; align-items:center; margin-top:1rem; }
-        .btnLg{ height:44px; padding:0 1rem; border-radius:12px; font-weight:800; border:1px solid rgba(255,255,255,.08); }
-        .btnDanger{ background:#7e1f21; }
-        .btnMuted{ background:#6c7b7f; color:#0b1419; }
-        .btnPrimary{ background:#124E66; }
+        .pill{ height:2.2em; border-radius:9999px; padding:0 .8em; }
+        .courtName{ color: var(--c-cloud); font-size: 1.35em; font-weight: 800; }
       `}</style>
-    </main>
+
+      <div className="container" style={{ width: "min(1200px, 95vw)", paddingTop: 18, paddingBottom: 24 }}>
+        <div className="card cardRoot">
+          {/* Header — reads meta name live from Firebase */}
+          <div className="headerBar" style={{ justifyContent: "space-between", alignItems: "end" }}>
+            <div className="courtName">{externalCourtName || "Court"}</div>
+            <div className="stack" style={{ alignItems: "end", gap: ".5rem" }}>
+              <div style={{ display: "flex", gap: ".5rem", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <button
+                  className="btn pill"
+                  onClick={toggleGolden}
+                  title="Toggle Golden Point"
+                  style={{ background: s.golden ? "#e9b949" : "var(--c-primary)", color: s.golden ? "#0b1419" : "#fff" }}
+                >
+                  ● Golden
+                </button>
+                <select
+                  aria-label="Best of"
+                  className="input pill"
+                  value={s.meta?.bestOf ?? 3}
+                  onChange={(e) => updateBestOf(Number(e.target.value) as BestOf)}
+                  style={{ width: "9.5em" }}
+                >
+                  <option value={3}>Best of 3</option>
+                  <option value={5}>Best of 5</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Score rows */}
+          {renderRow("p1")}
+          {renderRow("p2")}
+
+          <div className="hr" />
+
+          {/* Team panels */}
+          <div className="teamsGrid">
+            {/* TEAM A */}
+            <div className="card teamCard">
+              <div className="stack" style={{ gap: ".75rem" }}>
+                <div className="nameRow">
+                  <div className="stack" style={{ gap: ".4rem" }}>
+                    <label style={{ color: "var(--c-cloud)", fontSize: "1em" }}>Player 1</label>
+                    <input
+                      className="input"
+                      placeholder="Enter Name"
+                      value={s.players["1a"].name}
+                      onChange={(e) => updatePlayer("1a", "name", e.target.value)}
+                      maxLength={30}
+                    />
+                    <select
+                      className="input"
+                      value={s.players["1a"].cc}
+                      onChange={(e) => updatePlayer("1a", "cc", e.target.value)}
+                    >
+                      {COUNTRIES.map(([f, n]) => (
+                        <option key={`${f}-${n}`} value={f}>{f} {n}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="stack" style={{ gap: ".4rem" }}>
+                    <label style={{ color: "var(--c-cloud)", fontSize: "1em" }}>Player 2</label>
+                    <input
+                      className="input"
+                      placeholder="Enter Name"
+                      value={s.players["1b"].name}
+                      onChange={(e) => updatePlayer("1b", "name", e.target.value)}
+                      maxLength={30}
+                    />
+                    <select
+                      className="input"
+                      value={s.players["1b"].cc}
+                      onChange={(e) => updatePlayer("1b", "cc", e.target.value)}
+                    >
+                      {COUNTRIES.map(([f, n]) => (
+                        <option key={`${f}-${n}`} value={f}>{f} {n}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="teamsGrid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                  <button className="btn btn-xl pm" onClick={() => addPoint("p1", +1)}>+</button>
+                  <button className="btn btn-xl pm" onClick={() => addPoint("p1", -1)}>−</button>
+                </div>
+              </div>
+            </div>
+
+            {/* TEAM B */}
+            <div className="card teamCard">
+              <div className="stack" style={{ gap: ".75rem" }}>
+                <div className="nameRow">
+                  <div className="stack" style={{ gap: ".4rem" }}>
+                    <label style={{ color: "var(--c-cloud)", fontSize: "1em" }}>Player 3</label>
+                    <input
+                      className="input"
+                      placeholder="Enter Name"
+                      value={s.players["2a"].name}
+                      onChange={(e) => updatePlayer("2a", "name", e.target.value)}
+                      maxLength={30}
+                    />
+                    <select
+                      className="input"
+                      value={s.players["2a"].cc}
+                      onChange={(e) => updatePlayer("2a", "cc", e.target.value)}
+                    >
+                      {COUNTRIES.map(([f, n]) => (
+                        <option key={`${f}-${n}`} value={f}>{f} {n}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="stack" style={{ gap: ".4rem" }}>
+                    <label style={{ color: "var(--c-cloud)", fontSize: "1em" }}>Player 4</label>
+                    <input
+                      className="input"
+                      placeholder="Enter Name"
+                      value={s.players["2b"].name}
+                      onChange={(e) => updatePlayer("2b", "name", e.target.value)}
+                      maxLength={30}
+                    />
+                    <select
+                      className="input"
+                      value={s.players["2b"].cc}
+                      onChange={(e) => updatePlayer("2b", "cc", e.target.value)}
+                    >
+                      {COUNTRIES.map(([f, n]) => (
+                        <option key={`${f}-${n}`} value={f}>{f} {n}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="teamsGrid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                  <button className="btn btn-xl pm" onClick={() => addPoint("p2", +1)}>+</button>
+                  <button className="btn btn-xl pm" onClick={() => addPoint("p2", -1)}>−</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer controls */}
+          <div
+            className="footerControls"
+            style={{
+              display: "flex",
+              gap: "0.6rem",
+              flexWrap: "wrap",
+              justifyContent: "center",
+              alignItems: "center",
+              marginTop: "0.9rem",
+              width: "100%",
+            }}
+          >
+            <button className="btn btn-danger btn-lg" onClick={resetGameOneStep}>Reset Game</button>
+            <button className="btn btn-gold btn-lg" onClick={newMatch}>New Match</button>
+            <button className="btn btn-lg" onClick={toggleServer} title="Toggle server">Serve 🎾</button>
+            <button className="btn btn-lg" onClick={resetPoints} title="Reset only points">Reset Points</button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
