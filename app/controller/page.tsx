@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue, set } from "firebase/database";
 
-/* ---------- Types (shared with Live/Index idea) ---------- */
+/* ---------- Types ---------- */
 type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
 type BestOf = 3 | 5;
@@ -23,15 +22,12 @@ type ScoreState = {
   ts?: number;
 };
 
-/* ---------- Constants ---------- */
-/** If you’re using per-court query (?court=court2), this honors it.
- *  If not provided, defaults to court1 (single-court).
- */
-function pickCourt(search: ReturnType<typeof useSearchParams>): string {
-  const c = search.get("court");
-  return c && /^court[1-5]$/i.test(c) ? c : "court1";
-}
+/* ---------- Court selection (fixed single-court) ---------- */
+const court = "court1";
+const COURT_PATH = `/courts/${court}`;
+const META_NAME_PATH = `/courts/${court}/meta/name`;
 
+/* ---------- Constants ---------- */
 const COUNTRIES: Array<[flag: string, name: string]> = [
   ["🇲🇾","Malaysia"],["🇸🇬","Singapore"],["🇹🇭","Thailand"],["🇮🇩","Indonesia"],["🇵🇭","Philippines"],
   ["🇻🇳","Vietnam"],["🇮🇳","India"],["🇯🇵","Japan"],["🇰🇷","South Korea"],["🇨🇳","China"],
@@ -66,7 +62,7 @@ const defaultState: ScoreState = {
   ts: undefined,
 };
 
-/* ---------- Normalization (RTDB → safe) ---------- */
+/* ---------- Normalize (RTDB → safe) ---------- */
 function normalize(v: any): ScoreState {
   const safe: ScoreState = {
     meta: {
@@ -107,13 +103,6 @@ function normalize(v: any): ScoreState {
  * Controller
  * =======================================================*/
 export default function ControllerPage() {
-  const search = useSearchParams();
-  const court = pickCourt(search);
-
-  // Paths (scoped by court)
-  const COURT_PATH = `/courts/${court}`;
-  const META_NAME_PATH = `/courts/${court}/meta/name`;
-
   const [s, setS] = useState<ScoreState>(defaultState);
   const [externalCourtName, setExternalCourtName] = useState<string>("");
 
@@ -137,11 +126,8 @@ export default function ControllerPage() {
       });
     })();
 
-    return () => {
-      unsubScore?.();
-      unsubName?.();
-    };
-  }, [COURT_PATH, META_NAME_PATH]);
+    return () => { unsubScore?.(); unsubName?.(); };
+  }, []);
 
   async function commit(next: ScoreState) {
     next.ts = Date.now();
@@ -152,13 +138,8 @@ export default function ControllerPage() {
   /* ---------- Scoring helpers ---------- */
   function pushSetAndReset(n: ScoreState, winner: Side) {
     const a = n.games.p1, b = n.games.p2;
-    if (winner === "p1") {
-      n.sets.p1.push(a + 1);
-      n.sets.p2.push(b);
-    } else {
-      n.sets.p2.push(b + 1);
-      n.sets.p1.push(a);
-    }
+    if (winner === "p1") { n.sets.p1.push(a + 1); n.sets.p2.push(b); }
+    else { n.sets.p2.push(b + 1); n.sets.p1.push(a); }
     n.games = { p1: 0, p2: 0 };
     n.points = { p1: 0, p2: 0 };
     n.tiebreak = false;
@@ -172,7 +153,6 @@ export default function ControllerPage() {
     const lead = Math.abs(gA - gB);
 
     if ((gA >= 6 || gB >= 6) && lead >= 2) {
-      // set finished normally
       n.sets.p1.push(gA); n.sets.p2.push(gB);
       n.games = { p1: 0, p2: 0 };
       n.tiebreak = false; n.tb = { p1: 0, p2: 0 };
@@ -188,22 +168,16 @@ export default function ControllerPage() {
     if (n.tiebreak) {
       if (dir === 1) n.tb[side] += 1;
       else n.tb[side] = Math.max(0, n.tb[side] - 1);
-
       const a = n.tb.p1, b = n.tb.p2;
-      if ((a >= 7 || b >= 7) && Math.abs(a - b) >= 2) {
-        pushSetAndReset(n, a > b ? "p1" : "p2");
-      }
+      if ((a >= 7 || b >= 7) && Math.abs(a - b) >= 2) pushSetAndReset(n, a > b ? "p1" : "p2");
       return commit(n);
     }
 
-    // Golden Point logic at deuce (40-40)
+    // Golden Point at deuce (40–40)
     const golden = !!n.meta.golden;
     if (golden && dir === 1) {
       const p1 = n.points.p1, p2 = n.points.p2;
-      if (p1 === 40 && p2 === 40) {
-        winGame(n, side);
-        return commit(n);
-      }
+      if (p1 === 40 && p2 === 40) { winGame(n, side); return commit(n); }
     }
 
     // Normal advantage scoring
@@ -211,17 +185,11 @@ export default function ControllerPage() {
       const opp: Side = side === "p1" ? "p2" : "p1";
       const ps = n.points[side], po = n.points[opp];
 
-      if (ps === 40 && (po === 0 || po === 15 || po === 30)) {
-        winGame(n, side);
-      } else if (ps === 40 && po === "Ad") {
-        n.points[opp] = 40;
-      } else if (ps === 40 && po === 40) {
-        n.points[side] = "Ad";
-      } else if (ps === "Ad") {
-        winGame(n, side);
-      } else {
-        n.points[side] = nextPoint(ps);
-      }
+      if (ps === 40 && (po === 0 || po === 15 || po === 30)) winGame(n, side);
+      else if (ps === 40 && po === "Ad") n.points[opp] = 40;
+      else if (ps === 40 && po === 40) n.points[side] = "Ad";
+      else if (ps === "Ad") winGame(n, side);
+      else n.points[side] = nextPoint(ps);
     } else {
       n.points[side] = prevPoint(n.points[side]);
     }
@@ -234,7 +202,6 @@ export default function ControllerPage() {
     commit(n);
   }
 
-  // NEW: Reset only the *current game points* (keeps games/sets)
   function resetPoints() {
     const n = clone();
     n.points = { p1: 0, p2: 0 };
@@ -243,19 +210,15 @@ export default function ControllerPage() {
     commit(n);
   }
 
-  // Reset Game: roll back EXACTLY one game from the leading side
+  // Roll back exactly one game from the leading side
   function resetLastGame() {
     const n = clone();
-    const g1 = n.games.p1;
-    const g2 = n.games.p2;
-
+    const g1 = n.games.p1, g2 = n.games.p2;
     if (g1 > g2) n.games.p1 = Math.max(0, g1 - 1);
     else if (g2 > g1) n.games.p2 = Math.max(0, g2 - 1);
-
     n.points = { p1: 0, p2: 0 };
     n.tiebreak = false;
     n.tb = { p1: 0, p2: 0 };
-
     commit(n);
   }
 
@@ -294,7 +257,7 @@ export default function ControllerPage() {
 
   const maxSets = useMemo(() => ((s.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s.meta?.bestOf]);
 
-  /* ---------- Row Renderer ---------- */
+  /* ---------- Row ---------- */
   function renderRow(side: Side) {
     const players = s.players ?? defaultState.players;
     const sets = s.sets ?? defaultState.sets;
