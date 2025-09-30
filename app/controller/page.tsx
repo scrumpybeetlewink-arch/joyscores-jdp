@@ -1,12 +1,10 @@
 "use client";
-export const dynamic = "force-static";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue, set } from "firebase/database";
 
-/** ---------- Types ---------- */
+/** ---------- Types (shared with Live/Index) ---------- */
 type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
 type BestOf = 3 | 5;
@@ -21,9 +19,12 @@ type ScoreState = {
   tiebreak: boolean;
   tb: Record<Side, number>;
   server: Side | null;
-  golden?: boolean;        // golden point enabled?
   ts?: number;
 };
+
+/** ---------- Paths (identical across pages) ---------- */
+const COURT_PATH = "/joyscores/court1";
+const META_NAME_PATH = "/joyscores/court1/meta/name";
 
 /** ---------- Countries ---------- */
 const COUNTRIES: Array<[flag: string, name: string]> = [
@@ -40,9 +41,10 @@ const nextPoint = (p: Point): Point =>
   p === 0 ? 15 : p === 15 ? 30 : p === 30 ? 40 : p === 40 ? "Ad" : "Ad";
 const prevPoint = (p: Point): Point =>
   p === 15 ? 0 : p === 30 ? 15 : p === 40 ? 30 : 40;
+
 const nameOrLabel = (n: string, fallback: string) => (n?.trim() ? n : fallback);
 
-/** ---------- Defaults ---------- */
+/** ---------- Defaults (names empty so placeholder shows) ---------- */
 const defaultState: ScoreState = {
   meta: { name: "", bestOf: 3 },
   players: {
@@ -57,10 +59,10 @@ const defaultState: ScoreState = {
   tiebreak: false,
   tb: { p1: 0, p2: 0 },
   server: "p1",
-  golden: false,
   ts: undefined,
 };
 
+/** ---------- Normalize snapshot from RTDB ---------- */
 function normalize(v: any): ScoreState {
   const safe: ScoreState = {
     meta: {
@@ -91,30 +93,16 @@ function normalize(v: any): ScoreState {
       p2: Number.isFinite(v?.tb?.p2) ? v.tb.p2 : 0,
     },
     server: v?.server === "p1" || v?.server === "p2" ? v.server : "p1",
-    golden: !!v?.golden,
     ts: typeof v?.ts === "number" ? v.ts : undefined,
   };
   return safe;
 }
 
 /** =========================================================
- *  Page wrapper (Suspense) so useSearchParams is compliant
+ *  Controller (always reads from Firebase; no local caches)
  *  =========================================================
  */
 export default function ControllerPage() {
-  return (
-    <Suspense fallback={<main style={{padding:24,color:"#fff"}}>Loading…</main>}>
-      <ControllerInner />
-    </Suspense>
-  );
-}
-
-function ControllerInner() {
-  const params = useSearchParams();
-  const courtId = params.get("court") || "court1";
-  const COURT_PATH = `/courts/${courtId}`;
-  const META_NAME_PATH = `/courts/${courtId}/meta/name`;
-
   const [s, setS] = useState<ScoreState>(defaultState);
   const [externalCourtName, setExternalCourtName] = useState<string>("");
 
@@ -142,7 +130,7 @@ function ControllerInner() {
       unsubScore?.();
       unsubName?.();
     };
-  }, [COURT_PATH, META_NAME_PATH]);
+  }, []);
 
   async function commit(next: ScoreState) {
     next.ts = Date.now();
@@ -184,17 +172,11 @@ function ControllerInner() {
     if (dir === 1) {
       const opp: Side = side === "p1" ? "p2" : "p1";
       const ps = n.points[side], po = n.points[opp];
-
-      // Golden point logic (only when enabled)
-      if (n.golden && ps === 40 && po === 40) {
-        winGame(n, side);            // next won point at 40-40 wins game
-      } else {
-        if (ps === 40 && (po === 0 || po === 15 || po === 30)) winGame(n, side);
-        else if (ps === 40 && po === "Ad") n.points[opp] = 40;
-        else if (ps === 40 && po === 40) n.points[side] = "Ad";
-        else if (ps === "Ad") winGame(n, side);
-        else n.points[side] = nextPoint(ps);
-      }
+      if (ps === 40 && (po === 0 || po === 15 || po === 30)) winGame(n, side);
+      else if (ps === 40 && po === "Ad") n.points[opp] = 40;
+      else if (ps === 40 && po === 40) n.points[side] = "Ad";
+      else if (ps === "Ad") winGame(n, side);
+      else n.points[side] = nextPoint(ps);
     } else {
       n.points[side] = prevPoint(n.points[side]);
     }
@@ -207,23 +189,21 @@ function ControllerInner() {
     commit(n);
   }
 
-  // Reset Game: remove exactly 1 game from the leader (request)
-  function resetGameOneStep() {
+  function resetGame() {
     const n = clone();
     const { p1: g1, p2: g2 } = n.games;
     if (g1 > g2) n.games.p1 = Math.max(0, g1 - 1);
     else if (g2 > g1) n.games.p2 = Math.max(0, g2 - 1);
-    // points remain as-is per last decision; clear tiebreak if any
-    if (n.tiebreak) n.tiebreak = false, n.tb = { p1: 0, p2: 0 };
     commit(n);
   }
 
-  // Reset only points (not games/sets)
   function resetPoints() {
     const n = clone();
-    n.points = { p1: 0, p2: 0 };
-    n.tiebreak = false;
-    n.tb = { p1: 0, p2: 0 };
+    if (n.tiebreak) {
+      n.tb = { p1: 0, p2: 0 };
+    } else {
+      n.points = { p1: 0, p2: 0 };
+    }
     commit(n);
   }
 
@@ -244,20 +224,13 @@ function ControllerInner() {
 
   async function updatePlayer(key: "1a"|"1b"|"2a"|"2b", field: "name"|"cc", val: string) {
     const n = clone();
-    const v = field === "name" ? val.slice(0, 30) : val;   // hard-limit to 30 chars
-    (n.players[key] as any)[field] = v;
+    (n.players[key] as any)[field] = val;
     await commit(n);
   }
 
   async function updateBestOf(v: BestOf) {
     const n = clone();
     n.meta.bestOf = v;
-    await commit(n);
-  }
-
-  async function toggleGolden() {
-    const n = clone();
-    n.golden = !n.golden;
     await commit(n);
   }
 
@@ -291,13 +264,13 @@ function ControllerInner() {
       fontSize: "1em",
       background: "var(--c-muted)",
       color: "#0b1419",
-      borderRadius: 12,
+      borderRadius: 10,
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      minHeight: "2.6em",
+      minHeight: "2.1em",
       padding: "0.1em 0",
-      fontWeight: 800,
+      fontWeight: 700,
     } as const;
 
     const pointsLabel = s.tiebreak ? `TB ${(s.tb ?? defaultState.tb)[side]}` : (s.points ?? defaultState.points)[side];
@@ -308,10 +281,9 @@ function ControllerInner() {
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 3.2em minmax(0,1fr)",
-          gap: "1rem",
+          gap: "0.75em",
           alignItems: "center",
-          fontSize: "1.35em",
-          margin: "10px 0",
+          fontSize: "1.5em",
         }}
       >
         <div className="teamline" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -327,7 +299,7 @@ function ControllerInner() {
           style={{
             display: "grid",
             gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)`,
-            gap: ".6rem",
+            gap: "0.4em",
           }}
         >
           {setCells.map((v, i) => (
@@ -358,7 +330,7 @@ function ControllerInner() {
           color: #fff;
           border: 1px solid rgba(0,0,0,0.15);
           border-radius: 16px;
-          padding: 1.1rem;
+          padding: 1rem;
           box-shadow: 0 6px 20px rgba(0,0,0,0.25);
         }
         .headerBar{
@@ -386,9 +358,16 @@ function ControllerInner() {
           font-size: 1em;
         }
 
-        .nameRow{ display:grid; grid-template-columns: 1fr 1fr; gap:.75rem; align-items:center; }
-        .input{ width:100%; background: var(--c-cloud); border:1px solid var(--c-muted); color: var(--c-ink);
-                border-radius: 10px; height: 2.6em; padding: 0 .9em; font-size: 1em; box-sizing: border-box; }
+        .input{
+          width: 100%;
+          background: var(--c-cloud);
+          border: 1px solid var(--c-muted);
+          color: var(--c-ink);
+          border-radius: 10px;
+          height: 2.6em;
+          padding: 0 .9em;
+          font-size: 1em;
+        }
         .input::placeholder{ color: var(--c-muted); }
         .input:focus{ outline: 2px solid var(--c-primary); border-color: var(--c-primary); }
 
@@ -406,38 +385,44 @@ function ControllerInner() {
         }
         .btn:hover{ filter: brightness(1.05); transform: translateY(-1px); }
         .btn:active{ transform: translateY(0); }
-        .btn-lg{ height: 2.4em; }
+        .btn-lg{ height: 2.8em; }
         .btn-xl{ height: 3.2em; font-size: 1.15em; }
-        .btn.pm{ font-size: 2.3em; line-height: 1; }
+        /* 100% bigger +/- symbols */
+        .btn.pm{ font-size: 2.3em; line-height: 1; } /* ~2x the previous 1.15em */
 
         .btn-danger{ background: #8b2e2e; }
         .btn-gold{ background: var(--c-muted); color: #0b1419; }
 
-        .pill{ height:2.2em; border-radius:9999px; padding:0 .8em; }
-        .courtName{ color: var(--c-cloud); font-size: 1.35em; font-weight: 800; }
+        .courtName{ color: var(--c-cloud); font-size: 1.4em; font-weight: 700; }
+
+        /* Best Of dropdown matches +/- button color */
+        .bestOfSelect{
+          background: var(--c-primary);
+          color: #fff;
+          border-color: transparent;
+        }
+        .bestOfSelect:focus{
+          outline: 2px solid var(--c-primary);
+          border-color: var(--c-primary);
+        }
+        .bestOfSelect option{
+          color: #0b1419;
+        }
       `}</style>
 
       <div className="container" style={{ width: "min(1200px, 95vw)", paddingTop: 18, paddingBottom: 24 }}>
         <div className="card cardRoot">
           {/* Header — reads meta name live from Firebase */}
           <div className="headerBar" style={{ justifyContent: "space-between", alignItems: "end" }}>
-            <div className="courtName">{externalCourtName || "Court"}</div>
+            <div className="courtName">{externalCourtName}</div>
             <div className="stack" style={{ alignItems: "end", gap: ".5rem" }}>
-              <div style={{ display: "flex", gap: ".5rem", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <button
-                  className="btn pill"
-                  onClick={toggleGolden}
-                  title="Toggle Golden Point"
-                  style={{ background: s.golden ? "#e9b949" : "var(--c-primary)", color: s.golden ? "#0b1419" : "#fff" }}
-                >
-                  ● Golden
-                </button>
+              <div style={{ display: "flex", gap: ".75rem", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <select
                   aria-label="Best of"
-                  className="input pill"
+                  className="input bestOfSelect"
                   value={s.meta?.bestOf ?? 3}
                   onChange={(e) => updateBestOf(Number(e.target.value) as BestOf)}
-                  style={{ width: "9.5em" }}
+                  style={{ width: "12em", borderRadius: 9999, padding: "0 .9em" }}
                 >
                   <option value={3}>Best of 3</option>
                   <option value={5}>Best of 5</option>
@@ -457,7 +442,7 @@ function ControllerInner() {
             {/* TEAM A */}
             <div className="card teamCard">
               <div className="stack" style={{ gap: ".75rem" }}>
-                <div className="nameRow">
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
                   <div className="stack" style={{ gap: ".4rem" }}>
                     <label style={{ color: "var(--c-cloud)", fontSize: "1em" }}>Player 1</label>
                     <input
@@ -500,6 +485,7 @@ function ControllerInner() {
                 </div>
 
                 <div className="teamsGrid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                  {/* +/- are 100% bigger via .pm */}
                   <button className="btn btn-xl pm" onClick={() => addPoint("p1", +1)}>+</button>
                   <button className="btn btn-xl pm" onClick={() => addPoint("p1", -1)}>−</button>
                 </div>
@@ -509,7 +495,7 @@ function ControllerInner() {
             {/* TEAM B */}
             <div className="card teamCard">
               <div className="stack" style={{ gap: ".75rem" }}>
-                <div className="nameRow">
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: ".75rem" }}>
                   <div className="stack" style={{ gap: ".4rem" }}>
                     <label style={{ color: "var(--c-cloud)", fontSize: "1em" }}>Player 3</label>
                     <input
@@ -564,18 +550,25 @@ function ControllerInner() {
             className="footerControls"
             style={{
               display: "flex",
-              gap: "0.6rem",
+              gap: "0.75rem",
               flexWrap: "wrap",
               justifyContent: "center",
               alignItems: "center",
-              marginTop: "0.9rem",
+              marginTop: "0.75rem",
               width: "100%",
             }}
           >
-            <button className="btn btn-danger btn-lg" onClick={resetGameOneStep}>Reset Game</button>
+            <button className="btn btn-danger btn-lg" onClick={resetGame}>Reset Game</button>
+            <button className="btn btn-danger btn-lg" onClick={resetPoints}>Reset Points</button>
             <button className="btn btn-gold btn-lg" onClick={newMatch}>New Match</button>
-            <button className="btn btn-lg" onClick={toggleServer} title="Toggle server">Serve 🎾</button>
-            <button className="btn btn-lg" onClick={resetPoints} title="Reset only points">Reset Points</button>
+            <button
+              className="btn btn-lg"
+              onClick={toggleServer}
+              style={{ background: "var(--c-primary)", borderColor: "transparent", color: "white" }}
+              title="Toggle server"
+            >
+              Serve🎾
+            </button>
           </div>
         </div>
       </div>
