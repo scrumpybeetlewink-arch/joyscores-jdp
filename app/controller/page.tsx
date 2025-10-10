@@ -22,7 +22,8 @@ type ScoreState = {
   ts?: number;
 };
 
-type PageProps = { searchParams?: { [k: string]: string | string[] | undefined } };
+// ✅ Loosened typing to satisfy Next 15’s PageProps shape
+type PageProps = { searchParams?: any };
 
 const COUNTRIES: Array<[flag: string, name: string]> = [
   ["🇲🇾","Malaysia"],["🇸🇬","Singapore"],["🇹🇭","Thailand"],["🇮🇩","Indonesia"],["🇵🇭","Philippines"],
