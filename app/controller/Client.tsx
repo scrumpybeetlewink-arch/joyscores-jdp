@@ -23,7 +23,7 @@ type ScoreState = {
   ts?: number;
 };
 
-/** ---------- Countries (unchanged) ---------- */
+/** ---------- Countries ---------- */
 const COUNTRIES: Array<[flag: string, name: string]> = [
   ["🇲🇾","Malaysia"],["🇸🇬","Singapore"],["🇹🇭","Thailand"],["🇮🇩","Indonesia"],["🇵🇭","Philippines"],
   ["🇻🇳","Vietnam"],["🇮🇳","India"],["🇯🇵","Japan"],["🇰🇷","South Korea"],["🇨🇳","China"],
@@ -181,7 +181,6 @@ export default function ControllerClient() {
       const ps = n.points[side], po = n.points[opp];
 
       if (golden) {
-        // Golden Point: at 40-40 next point wins the game
         if (ps === 40 && po === 40) {
           winGame(n, side);
         } else {
@@ -251,7 +250,6 @@ export default function ControllerClient() {
   async function toggleGolden() {
     const n = clone();
     n.meta.golden = !n.meta.golden;
-    // normalize Ad if golden turned on at deuce
     if (n.meta.golden && (n.points.p1 === "Ad" || n.points.p2 === "Ad")) {
       n.points = { p1: 40, p2: 40 };
     }
@@ -342,9 +340,9 @@ export default function ControllerClient() {
       <style>{`
         :root{
           --c-ink:#212A31;
-          --c-ink-2:#0B1B2B;   /* dark navy card */
-          --c-primary:#124E66; /* +/- and Best Of background */
-          --c-muted:#748D92;   /* set/point boxes */
+          --c-ink-2:#0B1B2B;
+          --c-primary:#124E66;
+          --c-muted:#748D92;
           --c-cloud:#D3D9D4;
         }
         .container { margin: 0 auto; }
@@ -395,7 +393,6 @@ export default function ControllerClient() {
         .input::placeholder{ color: var(--c-muted); }
         .input:focus{ outline: 2px solid var(--c-primary); border-color: var(--c-primary); }
 
-        /* Buttons */
         .btn{
           border: 1px solid transparent;
           background: var(--c-primary);
