@@ -1,5 +1,5 @@
-export const dynamic = "force-static";
 "use client";
+export const dynamic = "force-static";
 
 import { useEffect, useMemo, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
@@ -74,7 +74,6 @@ const nameOrLabel = (n: string, fallback: string) => (n?.trim() ? n : fallback);
 const nextPoint = (p: Point): Point => (p === 0 ? 15 : p === 15 ? 30 : p === 30 ? 40 : p === 40 ? "Ad" : "Ad");
 const prevPoint = (p: Point): Point => (p === 15 ? 0 : p === 30 ? 15 : p === 40 ? 30 : 40);
 
-// ——— COURT from query prop (no useSearchParams) ———
 function sanitizeCourt(raw?: string | string[]): "court1"|"court2"|"court3"|"court4"|"court5" {
   const s = Array.isArray(raw) ? raw[0] : raw;
   const ok = new Set(["court1","court2","court3","court4","court5"]);
