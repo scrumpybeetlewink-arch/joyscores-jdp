@@ -1,5 +1,4 @@
 "use client";
-
 export default function Home() {
   const courts = [1,2,3,4,5];
   return (
@@ -10,8 +9,8 @@ export default function Home() {
           <li key={n} style={{ background: "var(--panel)", borderRadius: 12, padding: 16, border: "1px solid var(--line)" }}>
             <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>court{n}</div>
             <div style={{ display: "flex", gap: 8 }}>
-              <a href={`/controller-court${n}/`} style={{ padding: "8px 12px", background: "var(--accent)", color: "var(--bg)", textDecoration: "none", borderRadius: 8 }}>Controller</a>
-              <a href={`/live-court${n}/`} style={{ padding: "8px 12px", border: "1px solid var(--line)", color: "var(--text)", textDecoration: "none", borderRadius: 8 }}>Live</a>
+              <a href={`/controller-court${'${n}'}/`} style={{ padding: "8px 12px", background: "var(--accent)", color: "var(--bg)", textDecoration: "none", borderRadius: 8 }}>Controller</a>
+              <a href={`/live-court${'${n}'}/`} style={{ padding: "8px 12px", border: "1px solid var(--line)", color: "var(--text)", textDecoration: "none", borderRadius: 8 }}>Live</a>
             </div>
           </li>
         ))}
