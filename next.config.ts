@@ -1,10 +1,8 @@
-// next.config.ts
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  output: "export",
+// @ts-check
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'export',
+  trailingSlash: true,
   reactStrictMode: true,
-  trailingSlash: true,          // ⬅️ ensures out/controller/index.html, out/live/index.html
 };
-
-export default nextConfig;
+module.exports = nextConfig;
