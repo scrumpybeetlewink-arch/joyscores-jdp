@@ -1,3 +1,4 @@
+// app/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -10,25 +11,19 @@ type CourtId = typeof COURTS[number];
 
 export default function IndexPage() {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); ensureAnonLogin(); }, []);
+  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => { ensureAnonLogin(); }, []);
   if (!mounted) return null;
 
   const [names, setNames] = useState<Record<CourtId, string>>({
-    court1: "Court 1",
-    court2: "Court 2",
-    court3: "Court 3",
-    court4: "Court 4",
-    court5: "Court 5",
+    court1: "Court 1", court2: "Court 2", court3: "Court 3", court4: "Court 4", court5: "Court 5",
   });
 
   useEffect(() => {
-    const unsubs = COURTS.map((c) => {
-      const r = ref(db, `courts/${c}/score/meta/name`);
-      return onValue(r, (snap) => {
-        const v = snap.val();
-        setNames((prev) => ({ ...prev, [c]: typeof v === "string" && v.trim() ? v : prev[c] }));
-      });
-    });
+    const unsubs = COURTS.map((c) => onValue(ref(db, `courts/${c}/score/meta/name`), (snap) => {
+      const v = snap.val();
+      setNames((p) => ({ ...p, [c]: (typeof v === "string" && v.trim()) ? v : p[c] }));
+    }));
     return () => unsubs.forEach((u) => (typeof u === "function" ? u() : undefined));
   }, []);
 
@@ -37,7 +32,7 @@ export default function IndexPage() {
   const saveName = async (c: CourtId, value: string) => {
     const next = value.trim() || c;
     await set(ref(db, `courts/${c}/score/meta/name`), next);
-    setNames((prev) => ({ ...prev, [c]: next }));
+    setNames((p) => ({ ...p, [c]: next }));
   };
 
   return (
@@ -45,15 +40,12 @@ export default function IndexPage() {
       <div className="max-w-4xl mx-auto">
         <header className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Courts</h1>
-
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value as CourtId)}
             className="appearance-none bg-slate-800 border border-slate-700 rounded-full px-4 py-2 pr-8 font-semibold"
           >
-            {COURTS.map((c) => (
-              <option key={c} value={c}>{names[c]}</option>
-            ))}
+            {COURTS.map((c) => <option key={c} value={c}>{names[c]}</option>)}
           </select>
         </header>
 
