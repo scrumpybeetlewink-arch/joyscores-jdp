@@ -14,10 +14,11 @@ import {
 } from "firebase/database";
 
 /**
- * IMPORTANT:
- * - This module is client-only (note the "use client" directive).
- * - It must only be imported from Client Components or client pages.
- * - All browser-only calls are guarded so it cannot throw during SSR/export.
+ * Client-only Firebase singletons with SSR-safe exports.
+ * - Same API: `app`, `auth`, `db`, `ensureAnonLogin`.
+ * - During SSR/build, exports are placeholders (typed via `as unknown as ...`)
+ *   so TypeScript is satisfied and the server never initializes Firebase.
+ * - In the browser, real instances are created lazily once and reused.
  */
 
 const configFromEnv = {
@@ -44,14 +45,13 @@ const firebaseConfig = {
   ...Object.fromEntries(Object.entries(configFromEnv).filter(([, v]) => !!v)),
 };
 
-// ——— Safe singletons (initialised on first client use) ———
+// Lazily-filled client singletons
 let _app: FirebaseApp | null = null;
 let _auth: Auth | null = null;
 let _db: Database | null = null;
 
 function ensureFirebase() {
-  // If somehow executed on the server, do nothing (callers are guarded).
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") return; // SSR: do nothing
 
   if (!_app) _app = getApps().length ? getApp() : initializeApp(firebaseConfig);
   if (!_auth) _auth = getAuth(_app);
@@ -59,53 +59,28 @@ function ensureFirebase() {
 
   // Optional emulators in local dev
   if (window.location.hostname === "localhost") {
-    try {
-      connectDatabaseEmulator(_db!, "127.0.0.1", 9000);
-    } catch {}
-    try {
-      connectAuthEmulator(_auth!, "http://127.0.0.1:9099", { disableWarnings: true });
-    } catch {}
+    try { connectDatabaseEmulator(_db!, "127.0.0.1", 9000); } catch {}
+    try { connectAuthEmulator(_auth!, "http://127.0.0.1:9099", { disableWarnings: true }); } catch {}
   }
 }
 
-// Named exports (read-only) — they’ll be null on server, non-null in browser after ensureFirebase()
-export const app: FirebaseApp = (() => {
-  if (typeof window !== "undefined") {
-    ensureFirebase();
-    return _app!;
-  }
-  // placeholder to satisfy types during SSR; never used at runtime
-  // @ts-expect-error server placeholder
-  return null;
-})();
+// Exports: placeholders on server, real instances in browser
+export const app: FirebaseApp =
+  (typeof window !== "undefined" ? (ensureFirebase(), _app!) : (null as unknown as FirebaseApp));
 
-export const auth: Auth = (() => {
-  if (typeof window !== "undefined") {
-    ensureFirebase();
-    return _auth!;
-  }
-  // @ts-expect-error server placeholder
-  return null;
-})();
+export const auth: Auth =
+  (typeof window !== "undefined" ? (ensureFirebase(), _auth!) : (null as unknown as Auth));
 
-export const db: Database = (() => {
-  if (typeof window !== "undefined") {
-    ensureFirebase();
-    return _db!;
-  }
-  // @ts-expect-error server placeholder
-  return null;
-})();
+export const db: Database =
+  (typeof window !== "undefined" ? (ensureFirebase(), _db!) : (null as unknown as Database));
 
-// Anonymous auth helper (safe if called during SSR)
+// Safe to call from client components; no-op on server
 export async function ensureAnonLogin() {
   if (typeof window === "undefined") return;
   ensureFirebase();
   try {
-    if (!_auth?.currentUser) {
-      await signInAnonymously(_auth!);
-    }
+    if (!_auth?.currentUser) await signInAnonymously(_auth!);
   } catch {
-    // swallow auth errors to avoid crashing the UI (network/permission/etc.)
+    // swallow to avoid UI crashes (network/permissions/etc.)
   }
 }
