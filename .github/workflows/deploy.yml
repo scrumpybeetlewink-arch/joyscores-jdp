@@ -39,19 +39,22 @@ jobs:
           NEXT_PUBLIC_FB_APP_ID=${{ vars.NEXT_PUBLIC_FB_APP_ID }}
           EOF
 
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
+      # Allow PNPM to refresh the lockfile to match updated overrides/resolutions
+      - name: Install deps (allow lockfile update)
+        run: pnpm install --no-frozen-lockfile
 
-      # Next 15 + output:export -> build writes static files to out/
-      - name: Build (Next.js static export)
+      # Build and static export to out/
+      - name: Build (Next.js)
         run: pnpm build
+
+      - name: Export (Next.js -> out/)
+        run: pnpm export
 
       - name: Sanity — exported routes exist
         run: |
           echo "---- out/ listing (html) ----"
           find out -maxdepth 2 -type f \( -name 'index.html' -o -name '*.html' \) | sed 's#^#out/#' | sort || true
 
-          # controller: allow /controller/index.html OR /controller.html
           if [[ -f out/controller/index.html ]] || [[ -f out/controller.html ]]; then
             echo "OK: controller exported"
           else
@@ -59,7 +62,6 @@ jobs:
             exit 1
           fi
 
-          # live: allow /live/index.html OR /live.html
           if [[ -f out/live/index.html ]] || [[ -f out/live.html ]]; then
             echo "OK: live exported"
           else
@@ -67,7 +69,6 @@ jobs:
             exit 1
           fi
 
-          # index
           if [[ -f out/index.html ]]; then
             echo "OK: index exported"
           else
@@ -75,11 +76,17 @@ jobs:
             exit 1
           fi
 
+      # (Optional) One-time diagnostics: ensure single React/DOM in build graph
+      - name: Check single React versions
+        run: |
+          pnpm ls react || true
+          pnpm ls react-dom || true
+
       - name: Deploy to Firebase Hosting (LIVE)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
           projectId: joyscores
-          site: joyscores-ef086
+          # Removed unsupported 'site:' input.
           channelId: live
