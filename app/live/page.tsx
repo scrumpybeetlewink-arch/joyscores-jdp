@@ -5,6 +5,8 @@ export const dynamic = "force-static";
 import { useEffect, useMemo, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue } from "firebase/database";
+import { useCourtId } from "@/app/shared/useCourtId";
+const courtId = useCourtId();
 
 /* ---------- Types ---------- */
 type Side = "p1" | "p2";
