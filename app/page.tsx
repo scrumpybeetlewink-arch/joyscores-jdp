@@ -21,13 +21,13 @@ export default function IndexPage() {
     court5: "Court 5",
   });
 
-  // subscribe names from RTDB
+  // Subscribe to each court name
   useEffect(() => {
     const unsubs = COURTS.map((c) => {
       const r = ref(db, `courts/${c}/score/meta/name`);
       return onValue(r, (snap) => {
         const v = snap.val();
-        setNames((prev) => ({ ...prev, [c]: v || prev[c] }));
+        setNames((prev) => ({ ...prev, [c]: typeof v === "string" && v.trim() ? v : prev[c] }));
       });
     });
     return () => unsubs.forEach((u) => (typeof u === "function" ? u() : undefined));
@@ -36,7 +36,10 @@ export default function IndexPage() {
   const [selected, setSelected] = useState<CourtId>("court1");
 
   const saveName = async (c: CourtId, value: string) => {
-    await set(ref(db, `courts/${c}/score/meta/name`), value.trim() || c);
+    const next = value.trim() || c;
+    await set(ref(db, `courts/${c}/score/meta/name`), next);
+    // Optimistic local update
+    setNames((prev) => ({ ...prev, [c]: next }));
   };
 
   return (
@@ -63,7 +66,7 @@ export default function IndexPage() {
           <Link href={`/live/?court=${selected}`} className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 font-bold">Open Live</Link>
         </div>
 
-        {/* Editable list */}
+        {/* Editable tiles */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {COURTS.map((c) => (
             <div key={c} className="rounded-xl border border-slate-700 p-4">
