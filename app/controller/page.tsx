@@ -2,9 +2,9 @@
 export const dynamic = "force-static";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue, set } from "firebase/database";
+import { useCourtId } from "@/app/shared/useCourtId";
 
 /** ---------- Types ---------- */
 type Side = "p1" | "p2";
@@ -111,7 +111,7 @@ export default function ControllerPage() {
 
 function ControllerInner() {
   const params = useSearchParams();
-  const courtId = params.get("court") || "court1";
+  const courtId = useCourtId();
   const COURT_PATH = `/courts/${courtId}`;
   const META_NAME_PATH = `/courts/${courtId}/meta/name`;
 
