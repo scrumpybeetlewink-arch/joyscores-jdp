@@ -110,8 +110,7 @@ export default function ControllerPage() {
 }
 
 function ControllerInner() {
-  const params = useSearchParams();
-  const courtId = useCourtId();
+const courtId = useCourtId();
   const COURT_PATH = `/courts/${courtId}`;
   const META_NAME_PATH = `/courts/${courtId}/meta/name`;
 
