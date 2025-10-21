@@ -1,19 +1,20 @@
 {
   "hosting": {
-    "site": "joyscores-ef086",
     "public": "out",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "cleanUrls": true,
     "rewrites": [
-      { "source": "/controller",  "destination": "/controller/index.html" },
-      { "source": "/controller/", "destination": "/controller/index.html" },
-      { "source": "/live",        "destination": "/live/index.html" },
-      { "source": "/live/",       "destination": "/live/index.html" },
-      { "source": "/",            "destination": "/index.html" }
-    ],
-    "headers": [
-      { "source": "/index.html",              "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
-      { "source": "/controller/index.html",   "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
-      { "source": "/live/index.html",         "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] }
+      { "source": "/controller/court1", "destination": "/controller/?court=court1" },
+      { "source": "/controller/court2", "destination": "/controller/?court=court2" },
+      { "source": "/controller/court3", "destination": "/controller/?court=court3" },
+      { "source": "/controller/court4", "destination": "/controller/?court=court4" },
+      { "source": "/controller/court5", "destination": "/controller/?court=court5" },
+
+      { "source": "/live/court1", "destination": "/live/?court=court1" },
+      { "source": "/live/court2", "destination": "/live/?court=court2" },
+      { "source": "/live/court3", "destination": "/live/?court=court3" },
+      { "source": "/live/court4", "destination": "/live/?court=court4" },
+      { "source": "/live/court5", "destination": "/live/?court=court5" }
     ]
   }
 }
