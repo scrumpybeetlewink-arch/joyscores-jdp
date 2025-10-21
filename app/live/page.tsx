@@ -1,205 +1,101 @@
 "use client";
 
-export const dynamic = "force-static";
-
-import { useEffect, useMemo, useState } from "react";
+import { useState, useEffect } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue } from "firebase/database";
-import { useSearchParams } from "next/navigation";
 
-/* ---------- Types ---------- */
+/** ---------- Types (shared with Controller) ---------- */
 type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
 type BestOf = 3 | 5;
 
 type Player = { name: string; cc: string };
 type ScoreState = {
-  meta: { name: string; bestOf: BestOf; golden?: boolean };
+  meta: { name: string; bestOf: BestOf };
   players: { "1a": Player; "1b": Player; "2a": Player; "2b": Player };
   points: Record<Side, Point>;
   games: Record<Side, number>;
   sets: { p1: number[]; p2: number[] };
-  tiebreak: boolean;
-  tb: Record<Side, number>;
-  server: Side | null;
-  ts?: number;
+  server: Side;
+  golden: boolean;
 };
 
-/* ---------- Fixed single-court paths ---------- */
-const params = useSearchParams();
-const court = (params.get("court") as string) || "court1";
-const COURT_PATH = `/courts/${court}`;
-const META_NAME_PATH = `/courts/${court}/meta/name`;
-
-/* ---------- Helpers ---------- */
-const flag = (cc: string) => cc || "🏳️";
-const nameOrLabel = (n: string, fallback: string) => (n?.trim() ? n : fallback);
-
-/* ---------- Defaults ---------- */
-const defaultState: ScoreState = {
-  meta: { name: "", bestOf: 3, golden: false },
-  players: {
-    "1a": { name: "", cc: "🇲🇾" },
-    "1b": { name: "", cc: "🇲🇾" },
-    "2a": { name: "", cc: "🇲🇾" },
-    "2b": { name: "", cc: "🇲🇾" },
-  },
-  points: { p1: 0, p2: 0 },
-  games: { p1: 0, p2: 0 },
-  sets: { p1: [], p2: [] },
-  tiebreak: false,
-  tb: { p1: 0, p2: 0 },
-  server: "p1",
-  ts: undefined,
-};
-
-function normalize(v: any): ScoreState {
-  const s = v ?? {};
-  return {
-    ...defaultState,
-    meta: {
-      name: s?.meta?.name ?? "",
-      bestOf: (s?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
-      golden: !!s?.meta?.golden,
-    },
-    players: {
-      "1a": { name: s?.players?.["1a"]?.name ?? "", cc: s?.players?.["1a"]?.cc ?? "🇲🇾" },
-      "1b": { name: s?.players?.["1b"]?.name ?? "", cc: s?.players?.["1b"]?.cc ?? "🇲🇾" },
-      "2a": { name: s?.players?.["2a"]?.name ?? "", cc: s?.players?.["2a"]?.cc ?? "🇲🇾" },
-      "2b": { name: s?.players?.["2b"]?.name ?? "", cc: s?.players?.["2b"]?.cc ?? "🇲🇾" },
-    },
-    points: {
-      p1: (s?.points?.p1 ?? 0) as Point,
-      p2: (s?.points?.p2 ?? 0) as Point,
-    },
-    games: {
-      p1: Number.isFinite(s?.games?.p1) ? s.games.p1 : 0,
-      p2: Number.isFinite(s?.games?.p2) ? s.games.p2 : 0,
-    },
-    sets: {
-      p1: Array.isArray(s?.sets?.p1) ? s.sets.p1 : [],
-      p2: Array.isArray(s?.sets?.p2) ? s.sets.p2 : [],
-    },
-    tiebreak: !!s?.tiebreak,
-    tb: {
-      p1: Number.isFinite(s?.tb?.p1) ? s.tb.p1 : 0,
-      p2: Number.isFinite(s?.tb?.p2) ? s.tb.p2 : 0,
-    },
-    server: s?.server === "p1" || s?.server === "p2" ? s.server : "p1",
-    ts: typeof s?.ts === "number" ? s.ts : undefined,
-  };
-}
-
-/* =========================================================
- * Live (read-only)
- * =======================================================*/
+/** =========================================================
+ *  SSR/export-safe mount guard
+ *  =========================================================
+ */
 export default function LivePage() {
-  const [s, setS] = useState<ScoreState>(defaultState);
-  const [courtName, setCourtName] = useState<string>("");
+  const [mounted, setMounted] = useState(false);
+  const [state, setState] = useState<ScoreState | null>(null);
 
+  // Prevent prerender crash during next export
   useEffect(() => {
-    let unsubScore = () => {};
-    let unsubName = () => {};
-    (async () => {
-      try { await ensureAnonLogin(); } catch {}
-      unsubScore = onValue(ref(db, COURT_PATH), (snap) => setS(normalize(snap.val())));
-      unsubName = onValue(ref(db, META_NAME_PATH), (snap) => {
-        const v = snap.val();
-        setCourtName(typeof v === "string" ? v : "");
-      });
-    })();
-    return () => { unsubScore?.(); unsubName?.(); };
+    setMounted(true);
   }, []);
 
-  const maxSets = useMemo(
-    () => ((s?.meta?.bestOf ?? 3) === 5 ? 5 : 3),
-    [s?.meta?.bestOf]
-  );
+  if (!mounted) {
+    return null; // skip rendering during build
+  }
 
-  const Row = ({ side }: { side: Side }) => {
-    const players = s.players;
-    const sets = s.sets;
-    const games = s.games;
+  /** -------- ensure Firebase anon login -------- */
+  useEffect(() => {
+    ensureAnonLogin();
+  }, []);
 
-    const p1a = nameOrLabel(players["1a"].name, "Player 1");
-    const p1b = nameOrLabel(players["1b"].name, "Player 2");
-    const p2a = nameOrLabel(players["2a"].name, "Player 3");
-    const p2b = nameOrLabel(players["2b"].name, "Player 4");
+  /** -------- determine current court -------- */
+  const [court, setCourt] = useState("court1");
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const qs = new URLSearchParams(window.location.search);
+      setCourt(qs.get("court") || "court1");
+    }
+  }, []);
 
-    const line =
-      side === "p1"
-        ? `${flag(players["1a"].cc)} ${p1a} / ${flag(players["1b"].cc)} ${p1b}`
-        : `${flag(players["2a"].cc)} ${p2a} / ${flag(players["2b"].cc)} ${p2b}`;
-
-    const finished = Math.max(sets.p1.length, sets.p2.length);
-    const setCells = Array.from({ length: maxSets }).map((_, i) => {
-      if (i < finished) return side === "p1" ? sets.p1[i] ?? "" : sets.p2[i] ?? "";
-      if (i === finished) return side === "p1" ? games.p1 ?? "" : games.p2 ?? "";
-      return "";
+  /** -------- subscribe to RTDB -------- */
+  useEffect(() => {
+    if (!court) return;
+    const scoreRef = ref(db, `courts/${court}/score`);
+    const unsub = onValue(scoreRef, (snap) => {
+      const v = snap.val();
+      if (v) setState(v);
     });
+    return () => unsub();
+  }, [court]);
 
-    const points = s.tiebreak ? `TB ${s.tb[side]}` : s.points[side];
+  if (!state) return <div className="p-4 text-center text-gray-400">Loading…</div>;
 
-    return (
-      <div
-        className="row"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 3rem minmax(0,1fr)",
-          gap: "1rem",
-          alignItems: "center",
-          fontSize: "1.28em",
-        }}
-      >
-        <div className="teamline">{line}</div>
-        <div className="serve">{s.server === side ? "🎾" : ""}</div>
-        <div
-          className="grid"
-          style={{
-            display: "grid",
-            gap: ".6rem",
-            gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)`,
-          }}
-        >
-          {setCells.map((v, i) => (
-            <div key={i} className="box">{v}</div>
-          ))}
-          <div className="box">{String(points)}</div>
-        </div>
-      </div>
-    );
-  };
+  /** -------- render scoreboard -------- */
+  const { players, points, games, sets, meta, server } = state;
 
   return (
-    <main className="wrap" style={{ minHeight:"100vh", background:"var(--ink)", display:"flex", alignItems:"center", justifyContent:"center", padding:"2vh 2vw" }}>
-      <style>{`
-        :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; }
-        .card{
-          width:min(1100px,95vw);
-          background:var(--ink2); color:#fff;
-          border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,.25);
-          padding:1rem 1.25rem;
-        }
-        .header{ text-align:center; padding-bottom:.8rem; border-bottom:1px solid rgba(211,217,212,.16); }
-        .court{ font-size:1.5em; font-weight:800; color:var(--cloud); }
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--bg)] text-white">
+      <h1 className="text-3xl mb-4 font-semibold">{meta?.name || "Court"}</h1>
 
-        .rows{ display:grid; gap:.9rem; margin-top:.9rem; }
-        .teamline{ color:var(--cloud); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-        .serve{ text-align:center; }
-        .box{
-          background:var(--muted); color:#0b1419;
-          border-radius:12px; min-height:2.4em;
-          display:flex; align-items:center; justify-content:center; font-weight:800;
-        }
-      `}</style>
-
-      <section className="card">
-        <div className="header"><div className="court">{courtName || "Court"}</div></div>
-        <div className="rows">
-          <Row side="p1" />
-          <Row side="p2" />
+      <div className="grid grid-cols-2 gap-6 w-full max-w-2xl text-center">
+        <div>
+          <p className="text-lg font-medium">
+            {players["1a"]?.name} & {players["1b"]?.name}
+          </p>
+          <p className="text-sm opacity-75">
+            Sets: {sets.p1.join(" ")} | Games: {games.p1} | Points: {points.p1}
+          </p>
+          {server === "p1" && <p className="text-yellow-400 text-sm mt-1">● Serving</p>}
         </div>
-      </section>
-    </main>
+
+        <div>
+          <p className="text-lg font-medium">
+            {players["2a"]?.name} & {players["2b"]?.name}
+          </p>
+          <p className="text-sm opacity-75">
+            Sets: {sets.p2.join(" ")} | Games: {games.p2} | Points: {points.p2}
+          </p>
+          {server === "p2" && <p className="text-yellow-400 text-sm mt-1">● Serving</p>}
+        </div>
+      </div>
+
+      {state.golden && (
+        <p className="mt-6 text-red-400 font-semibold text-lg">GOLDEN POINT</p>
+      )}
+    </div>
   );
 }
