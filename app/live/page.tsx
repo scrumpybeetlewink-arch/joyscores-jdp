@@ -1,8 +1,10 @@
+// app/live/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { ref, onValue } from "firebase/database";
+import { useCourtId } from "@/app/shared/useCourtId";
 
 type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
@@ -18,31 +20,19 @@ type ScoreState = {
   golden: boolean;
 };
 
-function resolveCourt(defaultCourt: string = "court1") {
-  if (typeof window === "undefined") return defaultCourt;
-  const q = new URLSearchParams(window.location.search).get("court");
-  return q && /^court[1-5]$/i.test(q) ? q.toLowerCase() : defaultCourt;
-}
-
 export default function LivePage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
+  useEffect(() => { ensureAnonLogin(); }, []);
   if (!mounted) return null;
 
-  ensureAnonLogin();
-
-  const [court, setCourt] = useState<string>(() => resolveCourt());
-  useEffect(() => { setCourt(resolveCourt()); }, []);
+  const court = useCourtId("court1");
   const COURT_PATH = `/courts/${court}`;
 
   const [state, setState] = useState<ScoreState | null>(null);
   useEffect(() => {
     const r = ref(db, `${COURT_PATH}/score`);
-    const unsub = onValue(r, (snap) => {
-      const v = snap.val();
-      if (v && typeof v === "object") setState(v as ScoreState);
-      else setState(null);
-    });
+    const unsub = onValue(r, (snap) => setState(snap.val() || null));
     return () => unsub();
   }, [COURT_PATH, court]);
 
