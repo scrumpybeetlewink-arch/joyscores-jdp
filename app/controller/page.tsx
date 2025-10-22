@@ -1,5 +1,6 @@
 "use client";
 
+import { getCourtId } from "@/app/shared/getCourtId";
 import React, { Suspense, useEffect, useState } from "react";
 import { getCourtId } from "@/app/shared/getCourtId";
 export const dynamic = "force-static";
@@ -118,6 +119,11 @@ export default function ControllerPage() {
 }
 
 function ControllerInner() {
+ 
+  const [courtId, setCourtId] =
+  useState<"court1"|"court2"|"court3"|"court4"|"court5">("court1");
+useEffect(() => { setCourtId(getCourtId()); }, []);
+ 
   const COURT_PATH = `/courts/${courtId}`;
   const META_NAME_PATH = `/courts/${courtId}/meta/name`;
 
