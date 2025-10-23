@@ -5,6 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { onValue, ref } from "firebase/database";
 
+/* ---------- Feature flags ---------- */
+const ENABLE_TICKER = false; // flip to true to show bottom-right live update card
+
 /* ---------- Types (aligned with your Live/Controller) ---------- */
 type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
@@ -83,12 +86,16 @@ function normalize(v: any): ScoreState {
 
 const COURT_IDS = ["court1", "court2", "court3", "court4", "court5"] as const;
 
+/* ---------- Optional ticker type ---------- */
+type UpdateEvent = { courtId: string; courtName: string; ts: number };
+
 /* =========================================================
  * Live All Courts (read-only)
  * =======================================================*/
 export default function LiveAllPage() {
   const [states, setStates] = useState<Record<string, ScoreState>>({});
   const [loading, setLoading] = useState(true);
+  const [updates, setUpdates] = useState<UpdateEvent[]>([]);
 
   useEffect(() => {
     let unsubs: Array<() => void> = [];
@@ -104,10 +111,17 @@ export default function LiveAllPage() {
           const norm = normalize(val);
           setStates((prev) => ({ ...prev, [id]: norm }));
 
-          // Turn off "Loading…" only after each court has delivered at least one snapshot
           if (!loadedOnce.has(id)) {
             loadedOnce.add(id);
             if (loadedOnce.size === COURT_IDS.length) setLoading(false);
+          }
+
+          if (ENABLE_TICKER) {
+            const label = (norm.meta?.name?.trim() ? norm.meta.name : `Court ${id.slice(-1)}`);
+            setUpdates((prev) => {
+              const next = [{ courtId: id, courtName: label, ts: Date.now() }, ...prev].slice(0, 6);
+              return next;
+            });
           }
         });
         unsubs.push(unsub);
@@ -122,7 +136,7 @@ export default function LiveAllPage() {
       <style>{`
         :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; --accent:#124E66; }
         .wrap{ width:min(1400px, 96vw); margin:0 auto; }
-        .title{ font-weight:800; font-size:clamp(22px,1.6vw + 16px,34px); letter-spacing:-.01em; margin: 0 0 .6rem 0; }
+        .title{ font-weight:800; font-size:clamp(22px,1.6vw + 16px,34px); letter-spacing:-.01em; margin:.2rem 0 1rem; text-align:center; }
         .grid{
           display:grid;
           grid-template-columns: repeat(2,minmax(0,1fr));
@@ -141,12 +155,7 @@ export default function LiveAllPage() {
           padding-bottom:.6rem; border-bottom:1px solid rgba(211,217,212,.16);
         }
         .court{
-          font-weight:800; color:var(--cloud);
-          opacity: .95;
-        }
-        .pill{
-          background: var(--muted); color:#0b1419; border-radius: 9999px; padding:.25rem .6rem; font-weight:800;
-          font-size:.85rem;
+          font-weight:800; color:var(--cloud); opacity:.95;
         }
         .rows{ display:grid; gap:.8rem; margin-top:.8rem; }
         .row{ display:grid; grid-template-columns: 1fr 2.6rem minmax(0,1fr); gap:.6rem; align-items:center; }
@@ -157,12 +166,26 @@ export default function LiveAllPage() {
           background:var(--muted); color:#0b1419; border-radius:10px; min-height:2.2em;
           display:flex; align-items:center; justify-content:center; font-weight:800;
         }
+
+        /* Ticker */
+        .ticker{
+          position: fixed; right: 16px; bottom: 16px; z-index: 20;
+          width: min(360px, 92vw); background: rgba(11,27,43,.92);
+          border: 1px solid rgba(255,255,255,.12); border-radius: 12px;
+          box-shadow: 0 10px 28px rgba(0,0,0,.35); padding: .75rem .9rem;
+        }
+        .tickerTitle{ font-weight:800; margin-bottom:.4rem; font-size: .95rem; opacity:.9; }
+        .tick{ display:flex; justify-content:space-between; gap:.6rem; padding:.35rem .4rem;
+               border-radius:8px; background: rgba(255,255,255,.06); }
+        .tick + .tick{ margin-top:.35rem; }
+        .tickTime{ opacity:.7; font-size:.85rem; }
       `}</style>
 
       <div className="wrap">
-        <h1 className="title">Live — All Courts</h1>
+        <h1 className="title">JoyDivisionCourts</h1>
+
         {loading ? (
-          <div style={{ opacity:.8 }}>Loading…</div>
+          <div style={{ opacity:.8, textAlign:"center" }}>Loading…</div>
         ) : (
           <section className="grid">
             {COURT_IDS.map((id) => (
@@ -171,6 +194,22 @@ export default function LiveAllPage() {
           </section>
         )}
       </div>
+
+      {ENABLE_TICKER && (
+        <aside className="ticker">
+          <div className="tickerTitle">Live Updates</div>
+          {updates.length === 0 ? (
+            <div style={{ opacity:.75 }}>Waiting for updates…</div>
+          ) : (
+            updates.map((u, i) => (
+              <div key={`${u.courtId}-${u.ts}-${i}`} className="tick">
+                <div style={{ fontWeight:700 }}>{u.courtName}</div>
+                <div className="tickTime">{new Date(u.ts).toLocaleTimeString()}</div>
+              </div>
+            ))
+          )}
+        </aside>
+      )}
     </main>
   );
 }
@@ -221,9 +260,7 @@ function CourtCard({ courtId, s }: { courtId: typeof COURT_IDS[number]; s: Score
     <article className="card">
       <div className="header">
         <div className="court">{courtTitle}</div>
-        <div className="pill" title={s.meta.golden ? "Golden point ON" : "Golden point OFF"}>
-          {s.meta.golden ? "Golden: ON" : "Golden: OFF"}
-        </div>
+        {/* Golden pill removed as requested */}
       </div>
       <div className="rows">
         <Row side="p1" />
