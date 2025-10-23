@@ -39,12 +39,11 @@ jobs:
           NEXT_PUBLIC_FB_APP_ID=${{ vars.NEXT_PUBLIC_FB_APP_ID }}
           EOF
 
-      # Lockfile mismatch-safe install since you're editing package.json on GitHub
-      - name: Install deps (allow lockfile update)
-        run: pnpm install --no-frozen-lockfile
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
 
-      # Next 15 with output:'export' -> build writes static site to out/
-      - name: Build (Next.js, static export)
+      # Next 15 + output:export -> build writes static files to out/
+      - name: Build (Next.js static export)
         run: pnpm build
 
       - name: Sanity — exported routes exist
@@ -52,6 +51,7 @@ jobs:
           echo "---- out/ listing (html) ----"
           find out -maxdepth 2 -type f \( -name 'index.html' -o -name '*.html' \) | sed 's#^#out/#' | sort || true
 
+          # controller: allow /controller/index.html OR /controller.html
           if [[ -f out/controller/index.html ]] || [[ -f out/controller.html ]]; then
             echo "OK: controller exported"
           else
@@ -59,6 +59,7 @@ jobs:
             exit 1
           fi
 
+          # live: allow /live/index.html OR /live.html
           if [[ -f out/live/index.html ]] || [[ -f out/live.html ]]; then
             echo "OK: live exported"
           else
@@ -66,6 +67,7 @@ jobs:
             exit 1
           fi
 
+          # index
           if [[ -f out/index.html ]]; then
             echo "OK: index exported"
           else
@@ -73,16 +75,11 @@ jobs:
             exit 1
           fi
 
-      - name: Check single React versions
-        run: |
-          pnpm ls react || true
-          pnpm ls react-dom || true
-
       - name: Deploy to Firebase Hosting (LIVE)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOYSCORES }}
           projectId: joyscores
-          # 'site:' removed (unsupported)
+          site: joyscores-ef086
           channelId: live
