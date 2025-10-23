@@ -40,31 +40,60 @@ function ControllerInner() {
     return () => off();
   }, [SCORE_PATH]);
 
-  const inc = (k: "p1" | "p2") => update(ref(db, SCORE_PATH), { [k]: (score[k] || 0) + 1 });
-  const dec = (k: "p1" | "p2") => update(ref(db, SCORE_PATH), { [k]: Math.max(0, (score[k] || 0) - 1) });
+  const inc = (k: "p1" | "p2") =>
+    update(ref(db, SCORE_PATH), { [k]: (score[k] || 0) + 1 });
+  const dec = (k: "p1" | "p2") =>
+    update(ref(db, SCORE_PATH), { [k]: Math.max(0, (score[k] || 0) - 1) });
   const reset = () => remove(ref(db, COURT_PATH));
 
   return (
     <main className="min-h-screen bg-slate-900 text-white p-6">
-      <h1 className="text-xl font-bold mb-6">Controller — {courtId.toUpperCase()}</h1>
+      <h1 className="text-xl font-bold mb-6">
+        Controller — {courtId.toUpperCase()}
+      </h1>
       <div className="grid grid-cols-2 gap-4 max-w-md">
         <div className="rounded-xl border border-slate-700 p-4">
           <div className="font-bold mb-2">Player 1</div>
           <div className="flex gap-2">
-            <button onClick={() => dec("p1")} className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600">-</button>
-            <button onClick={() => inc("p1")} className="px-3 py-2 rounded-lg bg-cyan-700 hover:bg-cyan-600">+</button>
+            <button
+              onClick={() => dec("p1")}
+              className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600"
+            >
+              -
+            </button>
+            <button
+              onClick={() => inc("p1")}
+              className="px-3 py-2 rounded-lg bg-cyan-700 hover:bg-cyan-600"
+            >
+              +
+            </button>
           </div>
         </div>
         <div className="rounded-xl border border-slate-700 p-4">
           <div className="font-bold mb-2">Player 2</div>
           <div className="flex gap-2">
-            <button onClick={() => dec("p2")} className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600">-</button>
-            <button onClick={() => inc("p2")} className="px-3 py-2 rounded-lg bg-cyan-700 hover:bg-cyan-600">+</button>
+            <button
+              onClick={() => dec("p2")}
+              className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600"
+            >
+              -
+            </button>
+            <button
+              onClick={() => inc("p2")}
+              className="px-3 py-2 rounded-lg bg-cyan-700 hover:bg-cyan-600"
+            >
+              +
+            </button>
           </div>
         </div>
       </div>
       <div className="mt-6">
-        <button onClick={reset} className="px-4 py-2 rounded-lg bg-rose-700 hover:bg-rose-600">Reset Court</button>
+        <button
+          onClick={reset}
+          className="px-4 py-2 rounded-lg bg-rose-700 hover:bg-rose-600"
+        >
+          Reset Court
+        </button>
       </div>
     </main>
   );
