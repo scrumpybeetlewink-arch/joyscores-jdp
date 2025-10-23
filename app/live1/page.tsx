@@ -1,3 +1,4 @@
+"use client";
 export const dynamic = "force-static";
 const COURT_ID = "court1";
 
