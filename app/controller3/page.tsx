@@ -1,8 +1,6 @@
-import dynamic from "next/dynamic";
-
 export const dynamic = "force-static";
 
-const ControllerClient = dynamic(() => import("../_shared/ControllerClient"), { ssr: false });
+import ControllerClient from "../_shared/ControllerClient";
 
 export default function Page() {
   return <ControllerClient courtId="court3" />;
