@@ -5,10 +5,11 @@ import { useEffect, useMemo, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { onValue, ref } from "firebase/database";
 
-/* Types mirrored from your Live/Controller */
+/* ---------- Types (aligned with your Live/Controller) ---------- */
 type Side = "p1" | "p2";
 type Point = 0 | 15 | 30 | 40 | "Ad";
 type BestOf = 3 | 5;
+
 type Player = { name: string; cc: string };
 type ScoreState = {
   meta: { name: string; bestOf: BestOf; golden?: boolean };
@@ -22,9 +23,10 @@ type ScoreState = {
   ts?: number;
 };
 
-/* Helpers / defaults */
+/* ---------- Helpers / Defaults ---------- */
 const flag = (cc: string) => cc || "🏳️";
 const nameOrLabel = (n: string, fb: string) => (n?.trim() ? n : fb);
+
 const DEFAULT: ScoreState = {
   meta: { name: "", bestOf: 3, golden: false },
   players: {
@@ -81,26 +83,37 @@ function normalize(v: any): ScoreState {
 
 const COURT_IDS = ["court1", "court2", "court3", "court4", "court5"] as const;
 
+/* =========================================================
+ * Live All Courts (read-only)
+ * =======================================================*/
 export default function LiveAllPage() {
   const [states, setStates] = useState<Record<string, ScoreState>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let unsubs: Array<() => void> = [];
+    const loadedOnce = new Set<string>();
+
     (async () => {
       try { await ensureAnonLogin(); } catch {}
-      // Subscribe once to /courts so all five updates stream in together
-      const unsub = onValue(ref(db, "/courts"), (snap) => {
-        const all = snap.val() || {};
-        const next: Record<string, ScoreState> = {};
-        for (const id of COURT_IDS) {
-          next[id] = normalize(all?.[id]);
-        }
-        setStates(next);
-        setLoading(false);
+
+      COURT_IDS.forEach((id) => {
+        const path = `/courts/${id}`;
+        const unsub = onValue(ref(db, path), (snap) => {
+          const val = snap.val();
+          const norm = normalize(val);
+          setStates((prev) => ({ ...prev, [id]: norm }));
+
+          // Turn off "Loading…" only after each court has delivered at least one snapshot
+          if (!loadedOnce.has(id)) {
+            loadedOnce.add(id);
+            if (loadedOnce.size === COURT_IDS.length) setLoading(false);
+          }
+        });
+        unsubs.push(unsub);
       });
-      unsubs.push(unsub);
     })();
+
     return () => { unsubs.forEach((fn) => fn?.()); };
   }, []);
 
@@ -183,8 +196,8 @@ function CourtCard({ courtId, s }: { courtId: typeof COURT_IDS[number]; s: Score
 
     const finished = Math.max(sets.p1.length, sets.p2.length);
     const setCells = Array.from({ length: maxSets }).map((_, i) => {
-      if (i < finished) return side === "p1" ? sets.p1[i] ?? "" : sets.p2[i] ?? "";
-      if (i === finished) return side === "p1" ? games.p1 ?? "" : games.p2 ?? "";
+      if (i < finished) return side === "p1" ? (sets.p1[i] ?? "") : (sets.p2[i] ?? "");
+      if (i === finished) return side === "p1" ? (games.p1 ?? "") : (games.p2 ?? "");
       return "";
     });
 
