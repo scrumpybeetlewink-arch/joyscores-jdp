@@ -111,6 +111,29 @@ export default function ControllerClient({
   const [s, setS] = useState<ScoreState>(defaultState);
   const [externalCourtName, setExternalCourtName] = useState<string>("");
 
+  // --- NEW: rename UI state + helpers
+  const defaultLabel = `Court ${courtId.slice(-1)}`;
+  const isCustomName = Boolean((externalCourtName || "").trim());
+  const displayName = isCustomName ? externalCourtName! : defaultLabel;
+
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
+
+  async function saveCourtName(next: string) {
+    const name = next.trim().slice(0, 40); // cap at 40 chars
+    try { await ensureAnonLogin(); } catch {}
+    await set(ref(db, META_NAME_PATH), name);
+    setEditingName(false);
+  }
+  function startEditing() {
+    setDraftName(externalCourtName || "");
+    setEditingName(true);
+  }
+  function cancelEditing() {
+    setEditingName(false);
+  }
+  // --- end NEW
+
   useEffect(() => {
     let unsubScore = () => {};
     let unsubName = () => {};
@@ -414,7 +437,68 @@ export default function ControllerClient({
         <div className="card cardRoot">
           {/* Header — reads meta name live from Firebase */}
           <div className="headerBar" style={{ justifyContent: "space-between", alignItems: "end" }}>
-            <div className="courtName">{externalCourtName || "Court"}</div>
+            {/* --- NEW: courtId chip + greyed placeholder + rename --- */}
+            <div style={{ display:"flex", alignItems:"center", gap: ".6rem", flexWrap: "wrap" }}>
+              <span
+                className="pill"
+                style={{
+                  background: "var(--c-muted)",
+                  color: "#0b1419",
+                  fontWeight: 800,
+                  borderRadius: 9999,
+                  padding: ".35rem .7rem",
+                }}
+                title={`ID: ${courtId}`}
+              >
+                {courtId}
+              </span>
+
+              {!editingName ? (
+                <div style={{ display:"flex", alignItems:"center", gap:".5rem" }}>
+                  <span
+                    className="courtName"
+                    style={{
+                      fontSize: "1.35em",
+                      fontWeight: 800,
+                      color: isCustomName ? "var(--c-cloud)" : "rgba(211,217,212,.55)", // grey if default
+                    }}
+                    title={isCustomName ? "Custom court name" : "Default placeholder (click pencil to rename)"}
+                  >
+                    {displayName}
+                  </span>
+                  <button
+                    className="btn pill"
+                    onClick={startEditing}
+                    title="Rename court"
+                    style={{ height: "2.2em", background: "var(--c-muted)", color: "#0b1419" }}
+                  >
+                    ✏️
+                  </button>
+                </div>
+              ) : (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); saveCourtName(draftName); }}
+                  style={{ display:"flex", gap:".5rem", alignItems:"center" }}
+                >
+                  <input
+                    autoFocus
+                    className="input"
+                    placeholder={defaultLabel}
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    onBlur={() => saveCourtName(draftName)}
+                    maxLength={40}
+                    style={{ width: "18rem" }}
+                  />
+                  <button type="submit" className="btn pill">Save</button>
+                  <button type="button" className="btn pill" onClick={cancelEditing} style={{ background:"#444" }}>
+                    Cancel
+                  </button>
+                </form>
+              )}
+            </div>
+            {/* --- end NEW --- */}
+
             <div className="stack" style={{ alignItems: "end", gap: ".5rem" }}>
               <div style={{ display: "flex", gap: ".5rem", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <button
