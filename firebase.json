@@ -1,9 +1,0 @@
-{
-  "hosting": {
-    "public": "out",
-    "ignore": [
-      "**/.*",
-      "**/node_modules/**"
-    ]
-  }
-}
