@@ -169,7 +169,7 @@ export default function LiveAllPage() {
               <div style={{ opacity:.75, textAlign:"center", padding:"1rem" }}>Select at least one court to display.</div>
             ) : (
               selected.map((id) => (
-                <CourtCard key={id} courtId={id} s={states[id] ?? DEFAULT} />
+                <CourtCard key={id} courtId={id as typeof COURT_IDS[number]} s={states[id] ?? DEFAULT} />
               ))
             )}
           </section>
