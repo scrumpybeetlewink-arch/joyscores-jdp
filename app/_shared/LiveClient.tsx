@@ -63,22 +63,25 @@ export default function LiveClient({
     </header>
   );
 
-  function TeamLine({
-    side,
-    top,
-  }: {
-    side: Side;
-    top?: boolean;
-  }) {
-    const a = top ? state.players["1a"] : state.players["2a"];
-    const b = top ? state.players["1b"] : state.players["2b"];
-    const sets = top ? state.sets.p1 : state.sets.p2;
-    const games = top ? state.games.p1 : state.games.p2;
-    const points = String(top ? state.points.p1 : state.points.p2);
-    const tb = top ? state.tb.p1 : state.tb.p2;
-    const isServer = state.server === side;
-
-    return (
+function TeamLine({
+  state,
+  side,
+  top,
+}: {
+  state: ScoreState;
+  side: Side;
+  top?: boolean;
+}) {
+  const a = top ? state.players["1a"] : state.players["2a"];
+  const b = top ? state.players["1b"] : state.players["2b"];
+  const sets = top ? state.sets.p1 : state.sets.p2;
+  const games = top ? state.games.p1 : state.games.p2;
+  const points = String(top ? state.points.p1 : state.points.p2);
+  const tb = top ? state.tb.p1 : state.tb.p2;
+  const isServer = state.server === side;
+  …
+}
+  return (
       <div
         style={{
           display: "grid",
