@@ -1,219 +1,203 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
-import { ref, onValue, off } from "firebase/database";
+import { ref, onValue } from "firebase/database";
 
+/* ---------- Types ---------- */
 type Side = "p1" | "p2";
+type Point = 0 | 15 | 30 | 40 | "Ad";
 type BestOf = 3 | 5;
+
 type Player = { name: string; cc: string };
 type ScoreState = {
   meta: { name: string; bestOf: BestOf; golden?: boolean };
   players: { "1a": Player; "1b": Player; "2a": Player; "2b": Player };
-  points: Record<Side, number | "Ad">;
+  points: Record<Side, Point>;
   games: Record<Side, number>;
   sets: { p1: number[]; p2: number[] };
   tiebreak: boolean;
   tb: Record<Side, number>;
-  server: Side;
-  ts: number;
+  server: Side | null;
+  ts?: number;
 };
 
-// normalize a raw RTDB value to a safe ScoreState-like object
-function normalize(val: any): ScoreState {
-  const defPlayer: Player = { name: "Player", cc: "🏳️" };
-  const meta = {
-    name: val?.meta?.name ?? "Court",
-    bestOf: (val?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
-    golden: Boolean(val?.meta?.golden),
-  };
-  const players = {
-    "1a": { ...(val?.players?.["1a"] ?? defPlayer) },
-    "1b": { ...(val?.players?.["1b"] ?? defPlayer) },
-    "2a": { ...(val?.players?.["2a"] ?? defPlayer) },
-    "2b": { ...(val?.players?.["2b"] ?? defPlayer) },
-  };
-  const sets = {
-    p1: Array.isArray(val?.sets?.p1) ? val.sets.p1 : [],
-    p2: Array.isArray(val?.sets?.p2) ? val.sets.p2 : [],
-  };
-  const points = {
-    p1: (val?.points?.p1 ?? 0) as number | "Ad",
-    p2: (val?.points?.p2 ?? 0) as number | "Ad",
-  };
-  const games = {
-    p1: Number.isFinite(val?.games?.p1) ? val.games.p1 : 0,
-    p2: Number.isFinite(val?.games?.p2) ? val.games.p2 : 0,
-  };
-  const tb = {
-    p1: Number.isFinite(val?.tb?.p1) ? val.tb.p1 : 0,
-    p2: Number.isFinite(val?.tb?.p2) ? val.tb.p2 : 0,
-  };
-  const server: Side = val?.server === "p2" ? "p2" : "p1";
-  const tiebreak = Boolean(val?.tiebreak);
-  const ts = Number.isFinite(val?.ts) ? val.ts : Date.now();
+/* ---------- Helpers ---------- */
+const flag = (cc: string) => cc || "🏳️";
+const nameOrLabel = (n: string, fallback: string) => (n?.trim() ? n : fallback);
 
-  return { meta, players, points, games, sets, tiebreak, tb, server, ts };
+/* ---------- Defaults ---------- */
+const defaultState: ScoreState = {
+  meta: { name: "", bestOf: 3, golden: false },
+  players: {
+    "1a": { name: "", cc: "🇲🇾" },
+    "1b": { name: "", cc: "🇲🇾" },
+    "2a": { name: "", cc: "🇲🇾" },
+    "2b": { name: "", cc: "🇲🇾" },
+  },
+  points: { p1: 0, p2: 0 },
+  games: { p1: 0, p2: 0 },
+  sets: { p1: [], p2: [] },
+  tiebreak: false,
+  tb: { p1: 0, p2: 0 },
+  server: "p1",
+  ts: undefined,
+};
+
+function normalize(v: any): ScoreState {
+  const s = v ?? {};
+  return {
+    ...defaultState,
+    meta: {
+      name: s?.meta?.name ?? "",
+      bestOf: (s?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
+      golden: !!s?.meta?.golden,
+    },
+    players: {
+      "1a": { name: s?.players?.["1a"]?.name ?? "", cc: s?.players?.["1a"]?.cc ?? "🇲🇾" },
+      "1b": { name: s?.players?.["1b"]?.name ?? "", cc: s?.players?.["1b"]?.cc ?? "🇲🇾" },
+      "2a": { name: s?.players?.["2a"]?.name ?? "", cc: s?.players?.["2a"]?.cc ?? "🇲🇾" },
+      "2b": { name: s?.players?.["2b"]?.name ?? "", cc: s?.players?.["2b"]?.cc ?? "🇲🇾" },
+    },
+    points: {
+      p1: (s?.points?.p1 ?? 0) as Point,
+      p2: (s?.points?.p2 ?? 0) as Point,
+    },
+    games: {
+      p1: Number.isFinite(s?.games?.p1) ? s.games.p1 : 0,
+      p2: Number.isFinite(s?.games?.p2) ? s.games.p2 : 0,
+    },
+    sets: {
+      p1: Array.isArray(s?.sets?.p1) ? s.sets.p1 : [],
+      p2: Array.isArray(s?.sets?.p2) ? s.sets.p2 : [],
+    },
+    tiebreak: !!s?.tiebreak,
+    tb: {
+      p1: Number.isFinite(s?.tb?.p1) ? s.tb.p1 : 0,
+      p2: Number.isFinite(s?.tb?.p2) ? s.tb.p2 : 0,
+    },
+    server: s?.server === "p1" || s?.server === "p2" ? s.server : "p1",
+    ts: typeof s?.ts === "number" ? s.ts : undefined,
+  };
 }
 
+/* =========================================================
+ * Live (read-only) — Multi-court via courtId prop
+ * =======================================================*/
 export default function LiveClient({
   courtId,
 }: {
   courtId: "court1" | "court2" | "court3" | "court4" | "court5";
 }) {
-  const [state, setState] = useState<ScoreState | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const COURT_PATH = `/courts/${courtId}`;
+  const META_NAME_PATH = `/courts/${courtId}/meta/name`;
+
+  const [s, setS] = useState<ScoreState>(defaultState);
+  const [courtName, setCourtName] = useState<string>("");
 
   useEffect(() => {
-    ensureAnonLogin();
-  }, []);
+    let unsubScore = () => {};
+    let unsubName = () => {};
+    (async () => {
+      try { await ensureAnonLogin(); } catch {}
+      unsubScore = onValue(ref(db, COURT_PATH), (snap) => setS(normalize(snap.val())));
+      unsubName = onValue(ref(db, META_NAME_PATH), (snap) => {
+        const v = snap.val();
+        setCourtName(typeof v === "string" ? v : "");
+      });
+    })();
+    return () => { unsubScore?.(); unsubName?.(); };
+  }, [COURT_PATH, META_NAME_PATH]);
 
-  useEffect(() => {
-    const base = ref(db, `courts/${courtId}`);
-    const unsub = onValue(
-      base,
-      (snap) => {
-        setError(null);
-        const val = snap.val();
-        if (!val) {
-          setState(null);
-          return;
-        }
-        setState(normalize(val));
-      },
-      (err) => {
-        console.error("RTDB onValue error:", err);
-        setError(err?.message || "Permission denied or network error");
-        setState(null);
-      }
+  const maxSets = useMemo(
+    () => ((s?.meta?.bestOf ?? 3) === 5 ? 5 : 3),
+    [s?.meta?.bestOf]
+  );
+
+  const Row = ({ side }: { side: Side }) => {
+    const players = s.players;
+    const sets = s.sets;
+    const games = s.games;
+
+    const p1a = nameOrLabel(players["1a"].name, "Player 1");
+    const p1b = nameOrLabel(players["1b"].name, "Player 2");
+    const p2a = nameOrLabel(players["2a"].name, "Player 3");
+    const p2b = nameOrLabel(players["2b"].name, "Player 4");
+
+    const line =
+      side === "p1"
+        ? `${flag(players["1a"].cc)} ${p1a} / ${flag(players["1b"].cc)} ${p1b}`
+        : `${flag(players["2a"].cc)} ${p2a} / ${flag(players["2b"].cc)} ${p2b}`;
+
+    const finished = Math.max(sets.p1.length, sets.p2.length);
+    const setCells = Array.from({ length: maxSets }).map((_, i) => {
+      if (i < finished) return side === "p1" ? sets.p1[i] ?? "" : sets.p2[i] ?? "";
+      if (i === finished) return side === "p1" ? games.p1 ?? "" : games.p2 ?? "";
+      return "";
+    });
+
+    const points = s.tiebreak ? `TB ${s.tb[side]}` : s.points[side];
+
+    return (
+      <div
+        className="row"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 3rem minmax(0,1fr)",
+          gap: "1rem",
+          alignItems: "center",
+          fontSize: "1.28em",
+        }}
+      >
+        <div className="teamline">{line}</div>
+        <div className="serve">{s.server === side ? "🎾" : ""}</div>
+        <div
+          className="grid"
+          style={{
+            display: "grid",
+            gap: ".6rem",
+            gridTemplateColumns: `repeat(${maxSets + 1}, 1fr)`,
+          }}
+        >
+          {setCells.map((v, i) => (
+            <div key={i} className="box">{v}</div>
+          ))}
+          <div className="box">{String(points)}</div>
+        </div>
+      </div>
     );
-    return () => off(base);
-  }, [courtId]);
-
-  if (error) return <div style={{ padding: 16, color: "#f88" }}>Error: {error}</div>;
-  if (!state) return <div style={{ padding: 16 }}>Loading…</div>;
+  };
 
   return (
-    <main style={{ padding: "28px 24px", maxWidth: 1100, margin: "0 auto", color: "var(--text, #e9edf3)" }}>
-      <header style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: "clamp(28px, 4vw, 56px)", fontWeight: 800, letterSpacing: "-0.02em" }}>
-          {state.meta.name} — {courtId}
-        </h1>
-        <div style={{ opacity: 0.7, marginTop: 6, fontSize: 14 }}>
-          Golden point: {String(state.meta.golden ?? false)} • Server: {state.server}
-          {state.tiebreak ? " • Tiebreak" : ""}
-        </div>
-      </header>
+    <main className="wrap" style={{ minHeight:"100vh", background:"var(--ink)", display:"flex", alignItems:"center", justifyContent:"center", padding:"2vh 2vw" }}>
+      <style>{`
+        :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; }
+        .card{
+          width:min(1100px,95vw);
+          background:var(--ink2); color:#fff;
+          border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,.25);
+          padding:1rem 1.25rem;
+        }
+        .header{ text-align:center; padding-bottom:.8rem; border-bottom:1px solid rgba(211,217,212,.16); }
+        .court{ font-size:1.5em; font-weight:800; color:var(--cloud); }
 
-      <section style={{ display: "grid", gap: 14 }}>
-        <TeamLine state={state} side="p1" top />
-        <TeamLine state={state} side="p2" />
+        .rows{ display:grid; gap:.9rem; margin-top:.9rem; }
+        .teamline{ color:var(--cloud); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+        .serve{ text-align:center; }
+        .box{
+          background:var(--muted); color:#0b1419;
+          border-radius:12px; min-height:2.4em;
+          display:flex; align-items:center; justify-content:center; font-weight:800;
+        }
+      `}</style>
+
+      <section className="card">
+        <div className="header"><div className="court">{courtName || "Court"}</div></div>
+        <div className="rows">
+          <Row side="p1" />
+          <Row side="p2" />
+        </div>
       </section>
     </main>
-  );
-}
-
-function TeamLine({
-  state,
-  side,
-  top,
-}: {
-  state: ScoreState;
-  side: Side;
-  top?: boolean;
-}) {
-  const a = top ? state.players["1a"] : state.players["2a"];
-  const b = top ? state.players["1b"] : state.players["2b"];
-  const sets = top ? state.sets.p1 : state.sets.p2;
-  const games = top ? state.games.p1 : state.games.p2;
-  const points = String(top ? state.points.p1 : state.points.p2);
-  const tb = top ? state.tb.p1 : state.tb.p2;
-  const isServer = state.server === side;
-
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr auto",
-        alignItems: "center",
-        gap: 16,
-        padding: "14px 16px",
-        background: "var(--panel, #14161b)",
-        borderRadius: 14,
-      }}
-    >
-      {/* Left: flags + names + sets */}
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 12, alignItems: "center" }}>
-        <div style={{ fontSize: 22, lineHeight: "1.2" }}>
-          <span style={{ marginRight: 6 }}>{a?.cc || "🏳️"}</span>
-          <span>&amp;</span>
-          <br />
-          <span style={{ marginRight: 6 }}>{b?.cc || "🏳️"}</span>
-          <span>&amp;</span>
-        </div>
-        <div>
-          <div style={{ fontSize: "clamp(18px, 2.4vw, 28px)", fontWeight: 700, letterSpacing: "-0.01em" }}>
-            {a?.name || "Player A"} &nbsp;&amp;&nbsp; {b?.name || "Player B"}
-            {isServer ? <span style={{ marginLeft: 8, opacity: 0.7 }}>• serve</span> : null}
-          </div>
-          {/* Sets row */}
-          <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-            {sets.map((v, i) => (
-              <span
-                key={i}
-                style={{
-                  minWidth: 28,
-                  textAlign: "center",
-                  padding: "4px 6px",
-                  background: "var(--panel-2, #1a1d23)",
-                  borderRadius: 8,
-                  fontWeight: 700,
-                }}
-              >
-                {v}
-              </span>
-            ))}
-            {/* current game as translucent chip */}
-            <span
-              style={{
-                minWidth: 28,
-                textAlign: "center",
-                padding: "4px 6px",
-                border: "1px solid rgba(255,255,255,.12)",
-                borderRadius: 8,
-                opacity: 0.8,
-              }}
-              title="current games"
-            >
-              {games}
-            </span>
-            {/* points or tiebreak */}
-            <span
-              style={{
-                minWidth: 34,
-                textAlign: "center",
-                padding: "4px 6px",
-                background: "var(--accent, #6AB2FF)",
-                color: "#0b111a",
-                borderRadius: 8,
-                fontWeight: 800,
-              }}
-              title={state.tiebreak ? "tiebreak points" : "current points"}
-            >
-              {state.tiebreak ? tb : points}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Right: Games / Points mirror */}
-      <div style={{ textAlign: "right", opacity: 0.9, minWidth: 180 }}>
-        <div>
-          <strong>Games:</strong> {games}
-          <span style={{ display: "inline-block", width: 10 }} />
-          <strong>Points:</strong> {state.tiebreak ? tb : points}
-        </div>
-      </div>
-    </div>
   );
 }
