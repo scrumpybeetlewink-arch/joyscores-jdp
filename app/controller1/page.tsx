@@ -1,4 +1,4 @@
-import dynamic from "next/dynamic";
+import NextDynamic from "next/dynamic";
 
 export const dynamic = "force-static";
 
