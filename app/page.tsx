@@ -67,10 +67,17 @@ export default function IndexPage() {
           opacity: 0.85;
           font-size: 0.95rem;
         }
+        .divider {
+          margin: 1.8rem 0;
+          border: none;
+          border-top: 1px solid rgba(255,255,255,0.15);
+        }
       `}</style>
 
       <section className="card">
-        <h1 className="title">🎾 JoyScores Controller</h1>
+        <h1 className="title">🎾 JoyScores Dashboard</h1>
+
+        {/* Controllers */}
         <div className="courtList">
           {courts.map((c) => (
             <Link
@@ -78,31 +85,38 @@ export default function IndexPage() {
               href={`/controller${c.id.replace("court", "")}`}
               className="courtItem"
             >
-              {c.label} <span>→</span>
+              {c.label} <span>⚙️</span>
             </Link>
           ))}
         </div>
-        <hr
-          style={{
-            margin: "1.8rem 0",
-            border: "none",
-            borderTop: "1px solid rgba(255,255,255,0.15)",
-          }}
-        />
+
+        <hr className="divider" />
+
+        {/* Live pages */}
         <div className="courtList">
           {courts.map((c) => (
             <Link
               key={c.id + "-live"}
               href={`/live${c.id.replace("court", "")}`}
               className="courtItem"
-              style={{
-                background: "#2A3342",
-                color: "#E9EDF3",
-              }}
+              style={{ background: "#2A3342", color: "#E9EDF3" }}
             >
               {c.label} Live <span>👁️</span>
             </Link>
           ))}
+        </div>
+
+        <hr className="divider" />
+
+        {/* All courts combined */}
+        <div className="courtList">
+          <Link
+            href="/live-all"
+            className="courtItem"
+            style={{ background: "#394655", color: "#E9EDF3", fontSize: "1.15rem" }}
+          >
+            All Courts Live <span>🌐</span>
+          </Link>
         </div>
       </section>
     </main>
