@@ -63,6 +63,19 @@ export default function LiveClient({
     </header>
   );
 
+  return (
+    <main style={{ padding: "28px 24px", maxWidth: 1100, margin: "0 auto", color: "var(--text, #e9edf3)" }}>
+      {Title}
+      <section style={{ display: "grid", gap: 14 }}>
+        <TeamLine state={state} side="p1" top />
+        <TeamLine state={state} side="p2" />
+      </section>
+    </main>
+  );
+}
+
+/* ---------- Presentational row ---------- */
+
 function TeamLine({
   state,
   side,
@@ -79,103 +92,91 @@ function TeamLine({
   const points = String(top ? state.points.p1 : state.points.p2);
   const tb = top ? state.tb.p1 : state.tb.p2;
   const isServer = state.server === side;
-  …
-}
+
   return (
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr auto",
-          alignItems: "center",
-          gap: 16,
-          padding: "14px 16px",
-          background: "var(--panel, #14161b)",
-          borderRadius: 14,
-        }}
-      >
-        {/* Left: flags + names + sets */}
-        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 12, alignItems: "center" }}>
-          <div style={{ fontSize: 22, lineHeight: "1.2" }}>
-            <span style={{ marginRight: 6 }}>{a?.cc || "🏳️"}</span>
-            <span>&amp;</span>
-            <br />
-            <span style={{ marginRight: 6 }}>{b?.cc || "🏳️"}</span>
-            <span>&amp;</span>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        alignItems: "center",
+        gap: 16,
+        padding: "14px 16px",
+        background: "var(--panel, #14161b)",
+        borderRadius: 14,
+      }}
+    >
+      {/* Left: flags + names + sets */}
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 12, alignItems: "center" }}>
+        <div style={{ fontSize: 22, lineHeight: "1.2" }}>
+          <span style={{ marginRight: 6 }}>{a?.cc || "🏳️"}</span>
+          <span>&amp;</span>
+          <br />
+          <span style={{ marginRight: 6 }}>{b?.cc || "🏳️"}</span>
+          <span>&amp;</span>
+        </div>
+        <div>
+          <div style={{ fontSize: "clamp(18px, 2.4vw, 28px)", fontWeight: 700, letterSpacing: "-0.01em" }}>
+            {a?.name || "Player A"} &nbsp;&amp;&nbsp; {b?.name || "Player B"}
+            {isServer ? <span style={{ marginLeft: 8, opacity: 0.7 }}>• serve</span> : null}
           </div>
-          <div>
-            <div style={{ fontSize: "clamp(18px, 2.4vw, 28px)", fontWeight: 700, letterSpacing: "-0.01em" }}>
-              {a?.name || "Player A"} &nbsp;&amp;&nbsp; {b?.name || "Player B"}
-              {isServer ? <span style={{ marginLeft: 8, opacity: 0.7 }}>• serve</span> : null}
-            </div>
-            {/* Sets row */}
-            <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-              {sets?.map((v, i) => (
-                <span
-                  key={i}
-                  style={{
-                    minWidth: 28,
-                    textAlign: "center",
-                    padding: "4px 6px",
-                    background: "var(--panel-2, #1a1d23)",
-                    borderRadius: 8,
-                    fontWeight: 700,
-                  }}
-                >
-                  {v}
-                </span>
-              ))}
-              {/* current game as translucent chip */}
+          {/* Sets row */}
+          <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+            {sets?.map((v, i) => (
               <span
+                key={i}
                 style={{
                   minWidth: 28,
                   textAlign: "center",
                   padding: "4px 6px",
-                  border: "1px solid rgba(255,255,255,.12)",
+                  background: "var(--panel-2, #1a1d23)",
                   borderRadius: 8,
-                  opacity: 0.8,
+                  fontWeight: 700,
                 }}
-                title="current games"
               >
-                {games}
+                {v}
               </span>
-              {/* points or tiebreak */}
-              <span
-                style={{
-                  minWidth: 34,
-                  textAlign: "center",
-                  padding: "4px 6px",
-                  background: "var(--accent, #6AB2FF)",
-                  color: "#0b111a",
-                  borderRadius: 8,
-                  fontWeight: 800,
-                }}
-                title={state.tiebreak ? "tiebreak points" : "current points"}
-              >
-                {state.tiebreak ? tb : points}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Games / Points number mirrors for 2-column layout parity */}
-        <div style={{ textAlign: "right", opacity: 0.9, minWidth: 180 }}>
-          <div>
-            <strong>Games:</strong> {games}
-            <span style={{ display: "inline-block", width: 10 }} />
-            <strong>Points:</strong> {state.tiebreak ? tb : points}
+            ))}
+            {/* current game as translucent chip */}
+            <span
+              style={{
+                minWidth: 28,
+                textAlign: "center",
+                padding: "4px 6px",
+                border: "1px solid rgba(255,255,255,.12)",
+                borderRadius: 8,
+                opacity: 0.8,
+              }}
+              title="current games"
+            >
+              {games}
+            </span>
+            {/* points or tiebreak */}
+            <span
+              style={{
+                minWidth: 34,
+                textAlign: "center",
+                padding: "4px 6px",
+                background: "var(--accent, #6AB2FF)",
+                color: "#0b111a",
+                borderRadius: 8,
+                fontWeight: 800,
+              }}
+              title={state.tiebreak ? "tiebreak points" : "current points"}
+            >
+              {state.tiebreak ? tb : points}
+            </span>
           </div>
         </div>
       </div>
-    );
-  }
 
-  return (
-    <main style={{ padding: "28px 24px", maxWidth: 1100, margin: "0 auto", color: "var(--text, #e9edf3)" }}>
-      {Title}
-      <section style={{ display: "grid", gap: 14 }}>
-        <TeamLine side="p1" top />
-        <TeamLine side="p2" />
-      </section>
-    </main>
+      {/* Right: Games / Points mirror */}
+      <div style={{ textAlign: "right", opacity: 0.9, minWidth: 180 }}>
+        <div>
+          <strong>Games:</strong> {games}
+          <span style={{ display: "inline-block", width: 10 }} />
+          <strong>Points:</strong> {state.tiebreak ? tb : points}
+        </div>
+      </div>
+    </div>
   );
 }
