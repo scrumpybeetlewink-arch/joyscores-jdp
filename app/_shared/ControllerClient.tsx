@@ -19,7 +19,7 @@ type ScoreState = {
   tiebreak: boolean;
   tb: Record<Side, number>;
   server: Side | null;
-  golden?: boolean;        // golden point enabled?
+  golden?: boolean; // golden point enabled?
   ts?: number;
 };
 
@@ -62,7 +62,7 @@ const defaultState: ScoreState = {
 function normalize(v: any): ScoreState {
   const safe: ScoreState = {
     meta: {
-      name: (v?.meta?.name ?? ""),
+      name: v?.meta?.name ?? "",
       bestOf: (v?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
     },
     players: {
@@ -104,14 +104,13 @@ export default function ControllerClient({
 }: {
   courtId: "court1" | "court2" | "court3" | "court4" | "court5";
 }) {
-  // Use the prop instead of search params
   const COURT_PATH = `/courts/${courtId}`;
   const META_NAME_PATH = `/courts/${courtId}/meta/name`;
 
   const [s, setS] = useState<ScoreState>(defaultState);
   const [externalCourtName, setExternalCourtName] = useState<string>("");
 
-  // --- NEW: rename UI state + helpers
+  // Rename UI state + helpers (no courtId chip)
   const defaultLabel = `Court ${courtId.slice(-1)}`;
   const isCustomName = Boolean((externalCourtName || "").trim());
   const displayName = isCustomName ? externalCourtName! : defaultLabel;
@@ -132,7 +131,6 @@ export default function ControllerClient({
   function cancelEditing() {
     setEditingName(false);
   }
-  // --- end NEW
 
   useEffect(() => {
     let unsubScore = () => {};
@@ -203,7 +201,7 @@ export default function ControllerClient({
 
       // Golden point logic (only when enabled)
       if (n.golden && ps === 40 && po === 40) {
-        winGame(n, side);            // next won point at 40-40 wins game
+        winGame(n, side); // next won point at 40-40 wins game
       } else {
         if (ps === 40 && (po === 0 || po === 15 || po === 30)) winGame(n, side);
         else if (ps === 40 && po === "Ad") n.points[opp] = 40;
@@ -223,18 +221,17 @@ export default function ControllerClient({
     commit(n);
   }
 
-  // Reset Game: remove exactly 1 game from the leader (request)
+  // Reset Game: remove exactly 1 game from the leader
   function resetGameOneStep() {
     const n = clone();
     const { p1: g1, p2: g2 } = n.games;
     if (g1 > g2) n.games.p1 = Math.max(0, g1 - 1);
     else if (g2 > g1) n.games.p2 = Math.max(0, g2 - 1);
-    // points remain as-is per last decision; clear tiebreak if any
     if (n.tiebreak) n.tiebreak = false, n.tb = { p1: 0, p2: 0 };
     commit(n);
   }
 
-  // Reset only points (not games/sets)
+  // Reset only points
   function resetPoints() {
     const n = clone();
     n.points = { p1: 0, p2: 0 };
@@ -260,7 +257,7 @@ export default function ControllerClient({
 
   async function updatePlayer(key: "1a"|"1b"|"2a"|"2b", field: "name"|"cc", val: string) {
     const n = clone();
-    const v = field === "name" ? val.slice(0, 30) : val;   // hard-limit to 30 chars
+    const v = field === "name" ? val.slice(0, 30) : val; // hard-limit to 30 chars
     (n.players[key] as any)[field] = v;
     await commit(n);
   }
@@ -437,22 +434,8 @@ export default function ControllerClient({
         <div className="card cardRoot">
           {/* Header — reads meta name live from Firebase */}
           <div className="headerBar" style={{ justifyContent: "space-between", alignItems: "end" }}>
-            {/* --- NEW: courtId chip + greyed placeholder + rename --- */}
+            {/* Name with greyed placeholder + inline rename (no courtId chip) */}
             <div style={{ display:"flex", alignItems:"center", gap: ".6rem", flexWrap: "wrap" }}>
-              <span
-                className="pill"
-                style={{
-                  background: "var(--c-muted)",
-                  color: "#0b1419",
-                  fontWeight: 800,
-                  borderRadius: 9999,
-                  padding: ".35rem .7rem",
-                }}
-                title={`ID: ${courtId}`}
-              >
-                {courtId}
-              </span>
-
               {!editingName ? (
                 <div style={{ display:"flex", alignItems:"center", gap:".5rem" }}>
                   <span
@@ -460,7 +443,7 @@ export default function ControllerClient({
                     style={{
                       fontSize: "1.35em",
                       fontWeight: 800,
-                      color: isCustomName ? "var(--c-cloud)" : "rgba(211,217,212,.55)", // grey if default
+                      color: isCustomName ? "var(--c-cloud)" : "rgba(211,217,212,.55)",
                     }}
                     title={isCustomName ? "Custom court name" : "Default placeholder (click pencil to rename)"}
                   >
@@ -497,7 +480,6 @@ export default function ControllerClient({
                 </form>
               )}
             </div>
-            {/* --- end NEW --- */}
 
             <div className="stack" style={{ alignItems: "end", gap: ".5rem" }}>
               <div style={{ display: "flex", gap: ".5rem", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
