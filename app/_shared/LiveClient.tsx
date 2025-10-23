@@ -41,6 +41,7 @@ export default function LiveClient({
         setState(val as ScoreState);
       },
       (err) => {
+        console.error("RTDB onValue error:", err);
         setError(err?.message || "Permission denied or network error");
         setState(null);
       }
@@ -51,21 +52,18 @@ export default function LiveClient({
   if (error) return <div style={{ padding: 16, color: "#f88" }}>Error: {error}</div>;
   if (!state) return <div style={{ padding: 16 }}>Loading…</div>;
 
-  const Title = (
-    <header style={{ marginBottom: 20 }}>
-      <h1 style={{ fontSize: "clamp(28px, 4vw, 56px)", fontWeight: 800, letterSpacing: "-0.02em" }}>
-        {state.meta?.name} — {courtId}
-      </h1>
-      <div style={{ opacity: 0.7, marginTop: 6, fontSize: 14 }}>
-        Golden point: {String(state.meta?.golden ?? false)} • Server: {state.server}
-        {state.tiebreak ? " • Tiebreak" : ""}
-      </div>
-    </header>
-  );
-
   return (
     <main style={{ padding: "28px 24px", maxWidth: 1100, margin: "0 auto", color: "var(--text, #e9edf3)" }}>
-      {Title}
+      <header style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: "clamp(28px, 4vw, 56px)", fontWeight: 800, letterSpacing: "-0.02em" }}>
+          {state.meta?.name} — {courtId}
+        </h1>
+        <div style={{ opacity: 0.7, marginTop: 6, fontSize: 14 }}>
+          Golden point: {String(state.meta?.golden ?? false)} • Server: {state.server}
+          {state.tiebreak ? " • Tiebreak" : ""}
+        </div>
+      </header>
+
       <section style={{ display: "grid", gap: 14 }}>
         <TeamLine state={state} side="p1" top />
         <TeamLine state={state} side="p2" />
@@ -73,8 +71,6 @@ export default function LiveClient({
     </main>
   );
 }
-
-/* ---------- Presentational row ---------- */
 
 function TeamLine({
   state,
@@ -105,7 +101,6 @@ function TeamLine({
         borderRadius: 14,
       }}
     >
-      {/* Left: flags + names + sets */}
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 12, alignItems: "center" }}>
         <div style={{ fontSize: 22, lineHeight: "1.2" }}>
           <span style={{ marginRight: 6 }}>{a?.cc || "🏳️"}</span>
@@ -119,7 +114,6 @@ function TeamLine({
             {a?.name || "Player A"} &nbsp;&amp;&nbsp; {b?.name || "Player B"}
             {isServer ? <span style={{ marginLeft: 8, opacity: 0.7 }}>• serve</span> : null}
           </div>
-          {/* Sets row */}
           <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
             {sets?.map((v, i) => (
               <span
@@ -136,7 +130,6 @@ function TeamLine({
                 {v}
               </span>
             ))}
-            {/* current game as translucent chip */}
             <span
               style={{
                 minWidth: 28,
@@ -150,7 +143,6 @@ function TeamLine({
             >
               {games}
             </span>
-            {/* points or tiebreak */}
             <span
               style={{
                 minWidth: 34,
@@ -169,7 +161,6 @@ function TeamLine({
         </div>
       </div>
 
-      {/* Right: Games / Points mirror */}
       <div style={{ textAlign: "right", opacity: 0.9, minWidth: 180 }}>
         <div>
           <strong>Games:</strong> {games}
