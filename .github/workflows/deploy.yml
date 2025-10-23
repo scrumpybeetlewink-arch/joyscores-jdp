@@ -49,32 +49,41 @@ jobs:
       - name: Sanity — exported routes exist
         run: |
           echo "---- out/ listing (html) ----"
-          find out -maxdepth 2 -type f \( -name 'index.html' -o -name '*.html' \) | sed 's#^#out/#' | sort || true
+          find out -maxdepth 3 -type f \( -name 'index.html' -o -name '*.html' \) | sort || true
 
-          # controller: allow /controller/index.html OR /controller.html
-          if [[ -f out/controller/index.html ]] || [[ -f out/controller.html ]]; then
-            echo "OK: controller exported"
+          echo ""
+          echo "Verifying multi-court exports…"
+
+          for i in 1 2 3 4 5; do
+            if [[ -f out/controller${i}/index.html ]]; then
+              echo "OK: controller${i} exported"
+            else
+              echo "::error ::missing out/controller${i}/index.html"
+              exit 1
+            fi
+
+            if [[ -f out/live${i}/index.html ]]; then
+              echo "OK: live${i} exported"
+            else
+              echo "::error ::missing out/live${i}/index.html"
+              exit 1
+            fi
+          done
+
+          # overlay + homepage checks
+          if [[ -f out/overlay/index.html ]]; then
+            echo "OK: overlay exported"
           else
-            echo "::error ::missing out/controller/index.html"
+            echo "::error ::missing out/overlay/index.html"
             exit 1
           fi
 
-          # live: allow /live/index.html OR /live.html
-          if [[ -f out/live/index.html ]] || [[ -f out/live.html ]]; then
-            echo "OK: live exported"
-          else
-            echo "::error ::missing out/live/index.html"
-            exit 1
-          fi
-
-          # index
           if [[ -f out/index.html ]]; then
             echo "OK: index exported"
           else
             echo "::error ::missing out/index.html"
             exit 1
           fi
-
       - name: Deploy to Firebase Hosting (LIVE)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
