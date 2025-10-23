@@ -19,6 +19,43 @@ type ScoreState = {
   ts: number;
 };
 
+// normalize a raw RTDB value to a safe ScoreState-like object
+function normalize(val: any): ScoreState {
+  const defPlayer: Player = { name: "Player", cc: "🏳️" };
+  const meta = {
+    name: val?.meta?.name ?? "Court",
+    bestOf: (val?.meta?.bestOf === 5 ? 5 : 3) as BestOf,
+    golden: Boolean(val?.meta?.golden),
+  };
+  const players = {
+    "1a": { ...(val?.players?.["1a"] ?? defPlayer) },
+    "1b": { ...(val?.players?.["1b"] ?? defPlayer) },
+    "2a": { ...(val?.players?.["2a"] ?? defPlayer) },
+    "2b": { ...(val?.players?.["2b"] ?? defPlayer) },
+  };
+  const sets = {
+    p1: Array.isArray(val?.sets?.p1) ? val.sets.p1 : [],
+    p2: Array.isArray(val?.sets?.p2) ? val.sets.p2 : [],
+  };
+  const points = {
+    p1: (val?.points?.p1 ?? 0) as number | "Ad",
+    p2: (val?.points?.p2 ?? 0) as number | "Ad",
+  };
+  const games = {
+    p1: Number.isFinite(val?.games?.p1) ? val.games.p1 : 0,
+    p2: Number.isFinite(val?.games?.p2) ? val.games.p2 : 0,
+  };
+  const tb = {
+    p1: Number.isFinite(val?.tb?.p1) ? val.tb.p1 : 0,
+    p2: Number.isFinite(val?.tb?.p2) ? val.tb.p2 : 0,
+  };
+  const server: Side = val?.server === "p2" ? "p2" : "p1";
+  const tiebreak = Boolean(val?.tiebreak);
+  const ts = Number.isFinite(val?.ts) ? val.ts : Date.now();
+
+  return { meta, players, points, games, sets, tiebreak, tb, server, ts };
+}
+
 export default function LiveClient({
   courtId,
 }: {
@@ -38,7 +75,11 @@ export default function LiveClient({
       (snap) => {
         setError(null);
         const val = snap.val();
-        setState(val as ScoreState);
+        if (!val) {
+          setState(null);
+          return;
+        }
+        setState(normalize(val));
       },
       (err) => {
         console.error("RTDB onValue error:", err);
@@ -56,10 +97,10 @@ export default function LiveClient({
     <main style={{ padding: "28px 24px", maxWidth: 1100, margin: "0 auto", color: "var(--text, #e9edf3)" }}>
       <header style={{ marginBottom: 20 }}>
         <h1 style={{ fontSize: "clamp(28px, 4vw, 56px)", fontWeight: 800, letterSpacing: "-0.02em" }}>
-          {state.meta?.name} — {courtId}
+          {state.meta.name} — {courtId}
         </h1>
         <div style={{ opacity: 0.7, marginTop: 6, fontSize: 14 }}>
-          Golden point: {String(state.meta?.golden ?? false)} • Server: {state.server}
+          Golden point: {String(state.meta.golden ?? false)} • Server: {state.server}
           {state.tiebreak ? " • Tiebreak" : ""}
         </div>
       </header>
@@ -101,6 +142,7 @@ function TeamLine({
         borderRadius: 14,
       }}
     >
+      {/* Left: flags + names + sets */}
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 12, alignItems: "center" }}>
         <div style={{ fontSize: 22, lineHeight: "1.2" }}>
           <span style={{ marginRight: 6 }}>{a?.cc || "🏳️"}</span>
@@ -114,8 +156,9 @@ function TeamLine({
             {a?.name || "Player A"} &nbsp;&amp;&nbsp; {b?.name || "Player B"}
             {isServer ? <span style={{ marginLeft: 8, opacity: 0.7 }}>• serve</span> : null}
           </div>
+          {/* Sets row */}
           <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-            {sets?.map((v, i) => (
+            {sets.map((v, i) => (
               <span
                 key={i}
                 style={{
@@ -130,6 +173,7 @@ function TeamLine({
                 {v}
               </span>
             ))}
+            {/* current game as translucent chip */}
             <span
               style={{
                 minWidth: 28,
@@ -143,6 +187,7 @@ function TeamLine({
             >
               {games}
             </span>
+            {/* points or tiebreak */}
             <span
               style={{
                 minWidth: 34,
@@ -161,6 +206,7 @@ function TeamLine({
         </div>
       </div>
 
+      {/* Right: Games / Points mirror */}
       <div style={{ textAlign: "right", opacity: 0.9, minWidth: 180 }}>
         <div>
           <strong>Games:</strong> {games}
