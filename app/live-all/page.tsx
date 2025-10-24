@@ -37,7 +37,7 @@ const DEFAULT: ScoreState = {
   points: { p1: 0, p2: 0 },
   games: { p1: 0, p2: 0 },
   sets: { p1: [], p2: [] },
-  tiebreak: false,
+    tiebreak: false,
   tb: { p1: 0, p2: 0 },
   server: "p1",
   ts: undefined,
@@ -81,7 +81,7 @@ function normalize(v: any): ScoreState {
 }
 
 /* =========================================================
- * Live — All Courts (Fixed 2×2 layout)
+ * Live — All Courts (2-column grid, shows all 5 courts)
  * =======================================================*/
 export default function LiveAllPage() {
   const [states, setStates] = useState<Record<string, ScoreState>>({});
@@ -144,7 +144,7 @@ export default function LiveAllPage() {
           <div style={{ opacity:.8, textAlign:"center" }}>Loading…</div>
         ) : (
           <section className="grid">
-            {COURT_IDS.slice(0, 4).map((id) => (
+            {COURT_IDS.map((id) => (
               <CourtCard key={id} courtId={id as typeof COURT_IDS[number]} s={states[id] ?? DEFAULT} />
             ))}
           </section>
