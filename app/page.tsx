@@ -1,16 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { LiveAllSelectorCard } from "@/components/LiveAllSelectorCard";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 
 export default function IndexPage() {
+  const router = useRouter();
+
   const courts = [
     { id: "court1", label: "Court 1" },
     { id: "court2", label: "Court 2" },
     { id: "court3", label: "Court 3" },
     { id: "court4", label: "Court 4" },
     { id: "court5", label: "Court 5" },
-  ];
+  ] as const;
+
+  // Default: all 5 selected
+  const [selected, setSelected] = useState<string[]>(
+    courts.map((c) => c.id)
+  );
+  const canLaunch = useMemo(() => selected.length >= 1, [selected]);
+
+  const toggle = (id: string) => {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const openSelected = () => {
+    const q = selected.join(",");
+    router.push(`/live-all?courts=${encodeURIComponent(q)}`);
+  };
 
   return (
     <main
@@ -30,7 +50,7 @@ export default function IndexPage() {
           border-radius: 16px;
           padding: 2rem 2.5rem;
           box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-          width: min(420px, 90vw);
+          width: min(520px, 94vw);
           text-align: center;
         }
         .title {
@@ -59,20 +79,44 @@ export default function IndexPage() {
           transition: background 0.15s ease, transform 0.12s ease;
           text-decoration: none;
         }
-        .courtItem:hover {
-          background: #186684;
-          transform: translateY(-2px);
-        }
-        .courtItem span {
-          font-weight: 500;
-          opacity: 0.85;
-          font-size: 0.95rem;
-        }
+        .courtItem:hover { background: #186684; transform: translateY(-2px); }
+        .courtItem span { font-weight: 500; opacity: 0.85; font-size: 0.95rem; }
         .divider {
           margin: 1.8rem 0;
           border: none;
           border-top: 1px solid rgba(255,255,255,0.15);
         }
+        .miniCard {
+          background: #0F1624;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 12px;
+          padding: 1rem 1.1rem;
+          text-align: left;
+        }
+        .checkRow {
+          display: flex;
+          align-items: center;
+          gap: .6rem;
+          background: #2A3342;
+          padding: .6rem .8rem;
+          border-radius: 10px;
+        }
+        .launchBtn {
+          width: 100%;
+          background: #124E66;
+          color: #fff;
+          border: none;
+          border-radius: 12px;
+          padding: .85rem;
+          font-weight: 800;
+          margin-top: .8rem;
+          cursor: pointer;
+        }
+        .launchBtn:disabled {
+          background: #2A3342;
+          cursor: not-allowed;
+        }
+        .hint { margin-top: .4rem; opacity: .7; font-size: .9rem; text-align:center; }
       `}</style>
 
       <section className="card">
@@ -118,24 +162,38 @@ export default function IndexPage() {
           >
             All Courts Live <span>🌐</span>
           </Link>
-        </div>
 
-        <hr className="divider" />
+          {/* Simple 5 checkboxes under the button */}
+          <div className="miniCard" style={{ marginTop: ".9rem" }}>
+            <div style={{ fontWeight: 800, marginBottom: ".6rem" }}>
+              Select courts for Live-All (default: all)
+            </div>
+            <div style={{ display: "grid", gap: ".6rem" }}>
+              {courts.map((c) => (
+                <label key={c.id} className="checkRow">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(c.id)}
+                    onChange={() => toggle(c.id)}
+                    style={{ accentColor: "#1EA1FF" }}
+                  />
+                  {c.label}
+                </label>
+              ))}
+            </div>
 
-        {/* Live-All Selection */}
-        <div className="courtList" style={{ marginTop: "1rem" }}>
-          <h2
-            style={{
-              fontSize: "1.25rem",
-              fontWeight: 700,
-              marginBottom: "0.75rem",
-              color: "var(--c-cloud, #E9EDF3)",
-            }}
-          >
-            Custom 2×2 View
-          </h2>
-
-          <LiveAllSelectorCard />
+            <button
+              className="launchBtn"
+              onClick={openSelected}
+              disabled={!canLaunch}
+              title={canLaunch ? "Open Live-All with selection" : "Select at least 1 court"}
+            >
+              Open Live-All with Selection
+            </button>
+            <div className="hint">
+              This won’t change the default button above (which shows all 5).
+            </div>
+          </div>
         </div>
       </section>
     </main>
