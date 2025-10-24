@@ -1,7 +1,7 @@
 "use client";
 export const dynamic = "force-static";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { onValue, ref } from "firebase/database";
@@ -82,15 +82,34 @@ function normalize(v: any): ScoreState {
 }
 
 /* =========================================================
- * Live — All Courts (2-column grid, respects ?courts=…)
+ * Page wrapper — Suspense boundary for useSearchParams
  * =======================================================*/
 export default function LiveAllPage() {
+  return (
+    <Suspense
+      fallback={
+        <main style={{ minHeight: "100vh", background: "#212A31", color: "#E9EDF3", display: "grid", placeItems: "center" }}>
+          Loading…
+        </main>
+      }
+    >
+      <LiveAllInner />
+    </Suspense>
+  );
+}
+
+/* =========================================================
+ * Live — All Courts (2-column grid, respects ?courts=…)
+ * =======================================================*/
+function LiveAllInner() {
   const [states, setStates] = useState<Record<string, ScoreState>>({});
   const [loading, setLoading] = useState(true);
 
-  // Read "?courts=court1,court3,court5" from URL
+  // Safe here because we're inside Suspense
   const params = useSearchParams();
   const fromQuery = params.get("courts");
+
+  // Selection from query, default to all 5
   const selected = useMemo(() => {
     const raw = (fromQuery || "")
       .split(",")
@@ -99,7 +118,6 @@ export default function LiveAllPage() {
     const valid = raw.filter((id) =>
       (COURT_IDS as readonly string[]).includes(id)
     ) as Array<typeof COURT_IDS[number]>;
-    // default to all 5 if no valid selection
     return valid.length ? valid : [...COURT_IDS];
   }, [fromQuery]);
 
@@ -107,7 +125,9 @@ export default function LiveAllPage() {
     const unsubs: Array<() => void> = [];
     const loaded = new Set<string>();
     (async () => {
-      try { await ensureAnonLogin(); } catch {}
+      try {
+        await ensureAnonLogin();
+      } catch {}
       COURT_IDS.forEach((id) => {
         const unsub = onValue(ref(db, `/courts/${id}`), (snap) => {
           setStates((prev) => ({ ...prev, [id]: normalize(snap.val()) }));
@@ -117,11 +137,13 @@ export default function LiveAllPage() {
         unsubs.push(unsub);
       });
     })();
-    return () => { unsubs.forEach((fn) => fn?.()); };
+    return () => {
+      unsubs.forEach((fn) => fn?.());
+    };
   }, []);
 
   return (
-    <main style={{ minHeight:"100vh", background:"#212A31", color:"#E9EDF3", padding:"2rem 1.2rem" }}>
+    <main style={{ minHeight: "100vh", background: "#212A31", color: "#E9EDF3", padding: "2rem 1.2rem" }}>
       <style>{`
         :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; }
         .wrap{ width:min(1400px,96vw); margin:0 auto; }
@@ -157,7 +179,7 @@ export default function LiveAllPage() {
         </h1>
 
         {loading ? (
-          <div style={{ opacity:.8, textAlign:"center" }}>Loading…</div>
+          <div style={{ opacity: .8, textAlign: "center" }}>Loading…</div>
         ) : (
           <section className="grid">
             {selected.map((id) => (
