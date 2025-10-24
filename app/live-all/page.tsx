@@ -81,7 +81,7 @@ function normalize(v: any): ScoreState {
 }
 
 /* =========================================================
- * Live — All Courts (Fixed 2×2 layout, no selector UI)
+ * Live — All Courts (Fixed 2×2 layout)
  * =======================================================*/
 export default function LiveAllPage() {
   const [states, setStates] = useState<Record<string, ScoreState>>({});
@@ -105,15 +105,12 @@ export default function LiveAllPage() {
   }, []);
 
   return (
-    <main style={{ minHeight:"100vh", background:"var(--ink,#212A31)", color:"var(--cloud,#E9EDF3)", padding:"2rem 1.2rem" }}>
+    <main style={{ minHeight:"100vh", background:"#212A31", color:"#E9EDF3", padding:"2rem 1.2rem" }}>
       <style>{`
-        :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; --accent:#124E66; }
-        .wrap{ width:min(1400px, 96vw); margin:0 auto; }
-        .title{
-          font-weight:800; text-align:center; margin:.4rem 0 1.4rem;
-          font-size:clamp(24px,1.8vw + 18px,40px); letter-spacing:-.01em;
-        }
-        .grid{ display:grid; gap:1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; }
+        .wrap{ width:min(1400px,96vw); margin:0 auto; }
+        .title{ font-weight:800; text-align:center; margin:.4rem 0 1.4rem; font-size:clamp(24px,1.8vw + 18px,40px); letter-spacing:-.01em; }
+        .grid{ display:grid; gap:1rem; grid-template-columns:repeat(2,minmax(0,1fr)); }
         @media (max-width:980px){ .grid{ grid-template-columns:1fr; } }
         .card{ background:var(--ink2); border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,.25); border:1px solid rgba(0,0,0,.15); padding:1rem 1.1rem; }
         .header{ display:flex; align-items:center; justify-content:space-between; padding-bottom:.6rem; border-bottom:1px solid rgba(211,217,212,.16); }
@@ -159,12 +156,8 @@ export default function LiveAllPage() {
 
 /* ---------- Court Card Component ---------- */
 function CourtCard({ courtId, s }: { courtId: typeof COURT_IDS[number]; s: ScoreState }) {
-  const maxSets = useMemo(
-    () => ((s?.meta?.bestOf ?? 3) === 5 ? 5 : 3),
-    [s?.meta?.bestOf]
-  );
-  const courtTitle =
-    (s?.meta?.name || "").trim() ? s.meta.name : `Court ${courtId.slice(-1)}`;
+  const maxSets = useMemo(() => ((s?.meta?.bestOf ?? 3) === 5 ? 5 : 3), [s?.meta?.bestOf]);
+  const courtTitle = (s?.meta?.name || "").trim() ? s.meta.name : `Court ${courtId.slice(-1)}`;
 
   const Row = ({ side }: { side: Side }) => {
     const p = s.players, sets = s.sets, games = s.games;
