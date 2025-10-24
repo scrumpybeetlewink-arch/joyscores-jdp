@@ -2,6 +2,7 @@
 export const dynamic = "force-static";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { db, ensureAnonLogin } from "@/lib/firebase.client";
 import { onValue, ref } from "firebase/database";
 
@@ -37,7 +38,7 @@ const DEFAULT: ScoreState = {
   points: { p1: 0, p2: 0 },
   games: { p1: 0, p2: 0 },
   sets: { p1: [], p2: [] },
-    tiebreak: false,
+  tiebreak: false,
   tb: { p1: 0, p2: 0 },
   server: "p1",
   ts: undefined,
@@ -81,11 +82,26 @@ function normalize(v: any): ScoreState {
 }
 
 /* =========================================================
- * Live — All Courts (2-column grid, shows all 5 courts)
+ * Live — All Courts (2-column grid, respects ?courts=…)
  * =======================================================*/
 export default function LiveAllPage() {
   const [states, setStates] = useState<Record<string, ScoreState>>({});
   const [loading, setLoading] = useState(true);
+
+  // Read "?courts=court1,court3,court5" from URL
+  const params = useSearchParams();
+  const fromQuery = params.get("courts");
+  const selected = useMemo(() => {
+    const raw = (fromQuery || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const valid = raw.filter((id) =>
+      (COURT_IDS as readonly string[]).includes(id)
+    ) as Array<typeof COURT_IDS[number]>;
+    // default to all 5 if no valid selection
+    return valid.length ? valid : [...COURT_IDS];
+  }, [fromQuery]);
 
   useEffect(() => {
     const unsubs: Array<() => void> = [];
@@ -144,8 +160,8 @@ export default function LiveAllPage() {
           <div style={{ opacity:.8, textAlign:"center" }}>Loading…</div>
         ) : (
           <section className="grid">
-            {COURT_IDS.map((id) => (
-              <CourtCard key={id} courtId={id as typeof COURT_IDS[number]} s={states[id] ?? DEFAULT} />
+            {selected.map((id) => (
+              <CourtCard key={id} courtId={id} s={states[id] ?? DEFAULT} />
             ))}
           </section>
         )}
