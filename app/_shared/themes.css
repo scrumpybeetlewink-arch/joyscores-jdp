@@ -9,13 +9,13 @@
   --c-cloud:#D3D9D4;
 }
 
-/* Light mode for daytime viewing */
-:root[data-theme="joy-light"] {
-  --c-ink:#F2F5F7;
-  --c-ink-2:#FFFFFF;
-  --c-primary:#1EA1FF;
-  --c-muted:#C6CCD2;
-  --c-cloud:#1C2A39;
+/* Joy Sunny — bright, energetic, outdoor vibe */
+:root[data-theme="joy-sunny"] {
+  --c-ink:#FFF8E6;           /* soft warm background */
+  --c-ink-2:#FFF1C7;         /* card background */
+  --c-primary:#F7B731;       /* sun-yellow accent */
+  --c-muted:#FAD17A;         /* pastel gold for boxes */
+  --c-cloud:#2C2C2C;         /* dark text on light bg */
 }
 
 /* Blue court theme */
