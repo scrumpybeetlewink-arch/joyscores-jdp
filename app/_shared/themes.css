@@ -1,43 +1,44 @@
-/* app/_shared/themes.css */
-
-/* Default / current look */
+/* JOYSCORES ORIGINAL — keep this as your root look */
 :root[data-theme="joy-dark"] {
-  --c-ink:#212A31;
-  --c-ink-2:#0B1B2B;
-  --c-primary:#124E66;
-  --c-muted:#748D92;
-  --c-cloud:#D3D9D4;
-}
-
-/* Joy Sunny — bright, energetic, outdoor vibe */
-:root[data-theme="joy-sunny"] {
-  --c-ink:#FFF8E6;           /* soft warm background */
-  --c-ink-2:#FFF1C7;         /* card background */
-  --c-primary:#F7B731;       /* sun-yellow accent */
-  --c-muted:#FAD17A;         /* pastel gold for boxes */
-  --c-cloud:#2C2C2C;         /* dark text on light bg */
-}
-
-/* Blue court theme */
-:root[data-theme="court-blue"] {
-  --c-ink:#091A2C;
-  --c-ink-2:#102A44;
-  --c-primary:#0077FF;
-  --c-muted:#8CA9C4;
+  --c-ink:#0A1220;
+  --c-ink-2:#121B2B;
+  --c-primary:#6AB2FF;
+  --c-muted:#2A3A57;
   --c-cloud:#E9EDF3;
 }
 
-/* Green / outdoor club theme */
-:root[data-theme="grass-green"] {
-  --c-ink:#0E1A11;
-  --c-ink-2:#15271A;
-  --c-primary:#2BA84A;
-  --c-muted:#A9D6A5;
-  --c-cloud:#E9EDF3;
+/* NIGHT PRO — modern dark cyan */
+:root[data-theme="night-pro"] {
+  --c-ink:#0F172A;
+  --c-ink-2:#1E2538;
+  --c-primary:#0EA5E9;
+  --c-muted:#475569;
+  --c-cloud:#F8FAFC;
 }
 
-/*
-Optional future slot:
-Club custom theme could be injected here dynamically by setting data-theme="club-custom"
-and adding variables at runtime.
-*/
+/* NEON COURT — futuristic electric tone */
+:root[data-theme="neon-court"] {
+  --c-ink:#050510;
+  --c-ink-2:#11122A;
+  --c-primary:#06B6D4;
+  --c-muted:#BE185D;
+  --c-cloud:#FDF2F8;
+}
+
+/* DAYLIGHT — bright, neutral sports interface */
+:root[data-theme="daylight"] {
+  --c-ink:#F5F6FA;
+  --c-ink-2:#FFFFFF;
+  --c-primary:#2563EB;
+  --c-muted:#CBD5E1;
+  --c-cloud:#1E293B;
+}
+
+/* GRASS CLUB — rich green tournament tone */
+:root[data-theme="grass-club"] {
+  --c-ink:#0B1A10;
+  --c-ink-2:#15291A;
+  --c-primary:#38B000;
+  --c-muted:#5A7F4A;
+  --c-cloud:#ECFDF5;
+}
