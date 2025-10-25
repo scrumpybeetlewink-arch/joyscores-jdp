@@ -35,10 +35,10 @@ export default function IndexPage() {
     router.push(`/live-all?courts=${encodeURIComponent(q)}`);
   };
 
-  // list of themes the user can pick
+    // list of themes the user can pick
   const themeOptions: { id: typeof theme; label: string }[] = [
     { id: "joy-dark", label: "Joy Dark" },
-    { id: "joy-light", label: "Joy Light" },
+    { id: "joy-sunny", label: "Joy Sunny" },
     { id: "court-blue", label: "Court Blue" },
     { id: "grass-green", label: "Grass Green" },
   ];
