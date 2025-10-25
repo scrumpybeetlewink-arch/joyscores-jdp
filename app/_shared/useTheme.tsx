@@ -9,11 +9,12 @@ export type Theme =
   | "daylight"
   | "grass-club";
 
-const DEFAULT_THEME: Theme = "joy-dark"; // always start with JoyScores original
+const DEFAULT_THEME: Theme = "joy-dark"; // keep original as default
 
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
+  // hydrate from localStorage on mount
   useEffect(() => {
     const saved = window.localStorage.getItem("joyscores-theme") as Theme | null;
     const initial = saved || DEFAULT_THEME;
@@ -21,6 +22,7 @@ export function useTheme() {
     document.documentElement.setAttribute("data-theme", initial);
   }, []);
 
+  // sync changes to <html data-theme="..."> and persist
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     window.localStorage.setItem("joyscores-theme", theme);
