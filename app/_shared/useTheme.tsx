@@ -4,16 +4,16 @@ import { useEffect, useState } from "react";
 
 export type Theme =
   | "joy-dark"
-  | "joy-sunny"
-  | "court-blue"
-  | "grass-green";
+  | "night-pro"
+  | "neon-court"
+  | "daylight"
+  | "grass-club";
 
-const DEFAULT_THEME: Theme = "joy-dark";
+const DEFAULT_THEME: Theme = "joy-dark"; // always start with JoyScores original
 
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
-  // on mount: load saved theme and apply
   useEffect(() => {
     const saved = window.localStorage.getItem("joyscores-theme") as Theme | null;
     const initial = saved || DEFAULT_THEME;
@@ -21,7 +21,6 @@ export function useTheme() {
     document.documentElement.setAttribute("data-theme", initial);
   }, []);
 
-  // whenever theme changes: reflect in <html> and persist
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     window.localStorage.setItem("joyscores-theme", theme);
