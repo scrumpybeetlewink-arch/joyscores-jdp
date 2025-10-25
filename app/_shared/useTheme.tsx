@@ -13,7 +13,7 @@ const DEFAULT_THEME: Theme = "joy-dark";
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
-  // on mount: read saved theme (if any) and apply it
+  // on mount: load saved theme and apply
   useEffect(() => {
     const saved = window.localStorage.getItem("joyscores-theme") as Theme | null;
     const initial = saved || DEFAULT_THEME;
@@ -21,7 +21,7 @@ export function useTheme() {
     document.documentElement.setAttribute("data-theme", initial);
   }, []);
 
-  // whenever theme changes: update <html data-theme="..."> and persist
+  // whenever theme changes: reflect in <html> and persist
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     window.localStorage.setItem("joyscores-theme", theme);
