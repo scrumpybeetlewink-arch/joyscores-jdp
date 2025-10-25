@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 export type Theme =
   | "joy-dark"
-  | "joy-light"
+  | "joy-sunny"
   | "court-blue"
   | "grass-green";
 
