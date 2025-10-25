@@ -1,3 +1,4 @@
+import "./_shared/themes.css";
 export const metadata = {
   title: "JoyScores",
   description: "Charcoal scoreboard with Firebase RTDB sync",
