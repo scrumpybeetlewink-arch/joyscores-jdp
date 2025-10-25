@@ -37,11 +37,12 @@ export default function IndexPage() {
 
     // list of themes the user can pick
   const themeOptions: { id: typeof theme; label: string }[] = [
-    { id: "joy-dark", label: "Joy Dark" },
-    { id: "joy-sunny", label: "Joy Sunny" },
-    { id: "court-blue", label: "Court Blue" },
-    { id: "grass-green", label: "Grass Green" },
-  ];
+  { id: "joy-dark", label: "Joy Dark (Original)" },
+  { id: "night-pro", label: "Night Pro" },
+  { id: "neon-court", label: "Neon Court" },
+  { id: "daylight", label: "Daylight" },
+  { id: "grass-club", label: "Grass Club" },
+];
 
   return (
     <main
