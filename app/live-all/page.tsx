@@ -81,69 +81,53 @@ function normalize(v: any): ScoreState {
   };
 }
 
-/* =========================================================
- * Page wrapper — Suspense boundary for useSearchParams
- * =======================================================*/
+/* ---------- Wrapper to satisfy Suspense requirement for useSearchParams ---------- */
 export default function LiveAllPage() {
   return (
-    <Suspense
-      fallback={
-        <main style={{ minHeight: "100vh", background: "#212A31", color: "#E9EDF3", display: "grid", placeItems: "center" }}>
-          Loading…
-        </main>
-      }
-    >
+    <Suspense fallback={<main style={{padding:24,color:"#E9EDF3"}}>Loading…</main>}>
       <LiveAllInner />
     </Suspense>
   );
 }
 
 /* =========================================================
- * Live — All Courts (2-column grid, respects ?courts=…)
+ * Live — All Courts (2×2 grid by default, supports ?courts=id1,id2)
  * =======================================================*/
 function LiveAllInner() {
+  const params = useSearchParams();
+  const raw = params.get("courts") || "";
+  const requested = raw
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean) as string[];
+
+  const showIds =
+    requested.length > 0
+      ? (requested.filter((x) => COURT_IDS.includes(x as any)) as typeof COURT_IDS[number][])
+      : (COURT_IDS as unknown as typeof COURT_IDS[number][]);
+
   const [states, setStates] = useState<Record<string, ScoreState>>({});
   const [loading, setLoading] = useState(true);
-
-  // Safe here because we're inside Suspense
-  const params = useSearchParams();
-  const fromQuery = params.get("courts");
-
-  // Selection from query, default to all 5
-  const selected = useMemo(() => {
-    const raw = (fromQuery || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const valid = raw.filter((id) =>
-      (COURT_IDS as readonly string[]).includes(id)
-    ) as Array<typeof COURT_IDS[number]>;
-    return valid.length ? valid : [...COURT_IDS];
-  }, [fromQuery]);
 
   useEffect(() => {
     const unsubs: Array<() => void> = [];
     const loaded = new Set<string>();
     (async () => {
-      try {
-        await ensureAnonLogin();
-      } catch {}
-      COURT_IDS.forEach((id) => {
+      try { await ensureAnonLogin(); } catch {}
+      showIds.forEach((id) => {
         const unsub = onValue(ref(db, `/courts/${id}`), (snap) => {
           setStates((prev) => ({ ...prev, [id]: normalize(snap.val()) }));
           loaded.add(id);
-          if (loaded.size === COURT_IDS.length) setLoading(false);
+          if (loaded.size === showIds.length) setLoading(false);
         });
         unsubs.push(unsub);
       });
     })();
-    return () => {
-      unsubs.forEach((fn) => fn?.());
-    };
-  }, []);
+    return () => { unsubs.forEach((fn) => fn?.()); };
+  }, [showIds.join(",")]); // re-subscribe if selection changes
 
   return (
-    <main style={{ minHeight: "100vh", background: "#212A31", color: "#E9EDF3", padding: "2rem 1.2rem" }}>
+    <main style={{ minHeight:"100vh", background:"#212A31", color:"#E9EDF3", padding:"2rem 1.2rem" }}>
       <style>{`
         :root{ --ink:#212A31; --ink2:#0B1B2B; --muted:#748D92; --cloud:#D3D9D4; }
         .wrap{ width:min(1400px,96vw); margin:0 auto; }
@@ -179,11 +163,11 @@ function LiveAllInner() {
         </h1>
 
         {loading ? (
-          <div style={{ opacity: .8, textAlign: "center" }}>Loading…</div>
+          <div style={{ opacity:.8, textAlign:"center" }}>Loading…</div>
         ) : (
           <section className="grid">
-            {selected.map((id) => (
-              <CourtCard key={id} courtId={id} s={states[id] ?? DEFAULT} />
+            {showIds.map((id) => (
+              <CourtCard key={id} courtId={id as typeof COURT_IDS[number]} s={states[id] ?? DEFAULT} />
             ))}
           </section>
         )}
