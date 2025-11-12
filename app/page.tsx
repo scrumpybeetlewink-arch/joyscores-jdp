@@ -3,11 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { useTheme } from "./_shared/useTheme";
 
 export default function IndexPage() {
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
 
   const courts = [
     { id: "court1", label: "Court 1" },
@@ -17,11 +15,8 @@ export default function IndexPage() {
     { id: "court5", label: "Court 5" },
   ] as const;
 
-  // default: all selected
-  const [selected, setSelected] = useState<string[]>(
-    courts.map((c) => c.id)
-  );
-
+  // Default: all selected for Live-All
+  const [selected, setSelected] = useState<string[]>(courts.map((c) => c.id));
   const canLaunch = useMemo(() => selected.length >= 1, [selected]);
 
   const toggle = (id: string) => {
@@ -34,15 +29,6 @@ export default function IndexPage() {
     const q = selected.join(",");
     router.push(`/live-all?courts=${encodeURIComponent(q)}`);
   };
-
-    // list of themes the user can pick
-  const themeOptions: { id: typeof theme; label: string }[] = [
-  { id: "joy-dark", label: "Joy Dark (Original)" },
-  { id: "night-pro", label: "Night Pro" },
-  { id: "neon-court", label: "Neon Court" },
-  { id: "daylight", label: "Daylight" },
-  { id: "grass-club", label: "Grass Club" },
-];
 
   return (
     <main
@@ -146,32 +132,6 @@ export default function IndexPage() {
           text-align:center;
           line-height:1.4;
         }
-
-        .themeBlock {
-          margin-top: 1.5rem;
-          background: #0F1624;
-          border: 1px solid rgba(255,255,255,.08);
-          border-radius: 12px;
-          padding: 1rem 1.1rem;
-          color: var(--c-cloud);
-          text-align: left;
-        }
-        .themeLabel {
-          font-weight: 700;
-          font-size: .9rem;
-          margin-bottom: .6rem;
-          color: var(--c-cloud);
-        }
-        .themeSelect {
-          width: 100%;
-          background: var(--c-ink-2);
-          color: var(--c-cloud);
-          border: 1px solid rgba(255,255,255,0.15);
-          border-radius: 10px;
-          padding: 0.7rem 0.8rem;
-          font-size: .95rem;
-          font-weight: 600;
-        }
       `}</style>
 
       <section className="card">
@@ -208,21 +168,17 @@ export default function IndexPage() {
 
         <hr className="divider" />
 
-        {/* All courts combined */}
+        {/* All courts combined (opens default all-5) */}
         <div className="courtList">
           <Link
             href="/live-all"
             className="courtItem"
-            style={{
-              background: "#394655",
-              color: "#E9EDF3",
-              fontSize: "1.15rem",
-            }}
+            style={{ background: "#394655", color: "#E9EDF3", fontSize: "1.15rem" }}
           >
             All Courts Live <span>🌐</span>
           </Link>
 
-          {/* Selection mini-card */}
+          {/* Selection for Live-All (optional) */}
           <div className="miniCard" style={{ marginTop: ".9rem" }}>
             <div style={{ fontWeight: 800, marginBottom: ".6rem", color: "#fff" }}>
               Select courts for Live-All (default: all)
@@ -246,36 +202,15 @@ export default function IndexPage() {
               className="launchBtn"
               onClick={openSelected}
               disabled={!canLaunch}
-              title={
-                canLaunch
-                  ? "Open Live-All with selection"
-                  : "Select at least 1 court"
-              }
+              title={canLaunch ? "Open Live-All with selection" : "Select at least 1 court"}
             >
               Open Live-All with Selection
             </button>
 
             <div className="hint">
-              This won’t change the default All Courts Live button above.
-              That button still shows all 5.
+              The main “All Courts Live” button above still opens all 5 by default.
             </div>
           </div>
-        </div>
-
-        {/* Theme chooser */}
-        <div className="themeBlock">
-          <div className="themeLabel">Theme</div>
-          <select
-            className="themeSelect"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value as any)}
-          >
-            {themeOptions.map((opt) => (
-              <option key={opt.id} value={opt.id}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
         </div>
       </section>
     </main>
