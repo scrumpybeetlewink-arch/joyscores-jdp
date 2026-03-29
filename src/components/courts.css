@@ -1,0 +1,82 @@
+.courts-dashboard {
+  padding: 16px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+.combined-display {
+  border: 1px solid #ddd;
+  padding: 12px;
+  margin-bottom: 12px;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.combined-scores {
+  display: flex;
+  gap: 16px;
+}
+
+.combined-team .score-large {
+  font-size: 34px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.courts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.court-card {
+  border: 1px solid #e4e4e4;
+  padding: 12px;
+  border-radius: 6px;
+  background: white;
+}
+
+.court-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.scores-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.team {
+  flex: 1;
+  text-align: center;
+}
+
+.team-label {
+  font-size: 12px;
+  color: #666;
+}
+
+.score {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 6px 0;
+}
+
+.controls button {
+  margin: 0 6px;
+}
+
+.manual-set {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.manual-set input {
+  width: 64px;
+}
